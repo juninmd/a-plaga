@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>A PRAGA — Zombie Plague 3D</title>
+    <link rel="stylesheet" href="/src/client/style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hud" class="hidden">
+      <div id="crosshair"></div>
+      <div id="hud-left">
+        <div id="hp-bar"><div id="hp-fill"></div><span id="hp-text"></span></div>
+        <div id="armor-bar"><div id="armor-fill"></div></div>
+        <div id="ap-text"></div>
+      </div>
+      <div id="hud-right">
+        <div id="round-info"></div>
+        <div id="weapon-info"></div>
+        <div id="ability-info"></div>
+      </div>
+      <div id="hud-center"></div>
+      <div id="killfeed"></div>
+      <div id="chat-box">
+        <div id="chat-log"></div>
+        <input id="chat-input" type="text" maxlength="140" placeholder="Enter para falar..." />
+      </div>
+      <div id="damage-numbers"></div>
+      <div id="vignette"></div>
+    </div>
+    <div id="menu" class="overlay">
+      <div class="menu-card">
+        <h1>A <span class="plague">PRAGA</span></h1>
+        <p class="sub">Zombie Plague 3D — inspirado no ZP 5.0</p>
+        <input id="name-input" type="text" maxlength="24" placeholder="Seu nome" />
+        <button id="join-btn">ENTRAR NA ARENA</button>
+        <p class="tip">WASD mover · Mouse mirar · Clique atirar · R habilidade · B loja · Tab placar · 1-3 classe</p>
+      </div>
+    </div>
+    <div id="shop" class="overlay hidden">
+      <div class="menu-card shop-card">
+        <h2>LOJA <span class="ap">AP: <span id="shop-ap">0</span></span></h2>
+        <div id="shop-classes"></div>
+        <div id="shop-items"></div>
+        <button id="shop-close" class="close-btn">FECHAR [B]</button>
+      </div>
+    </div>
+    <div id="scoreboard" class="overlay hidden">
+      <div class="score-card">
+        <h2>PLACAR</h2>
+        <table id="score-table">
+          <thead>
+            <tr><th>Jogador</th><th>Lado</th><th>Abates</th><th>Infecções</th><th>Mortes</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="dead" class="overlay hidden">
+      <div class="menu-card"><h2>☠️ MORTO</h2><p id="dead-reason"></p><p>O round vai continuar...</p></div>
+    </div>
+    <script type="module" src="/src/client/main.ts"></script>
+  </body>
+</html>
