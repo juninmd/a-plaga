@@ -19,7 +19,7 @@ export function useAbility(g: Game, e: Entity) {
 
   switch (e.classId) {
     case "runner":
-      e.buffSpeed = 1.5;
+      e.buffSpeed = 1.35;
       e.buffSpeedUntil = now() + 3;
       g.fx.push({ kind: "speed", pos: e.pos, color: 0xffb300 });
       break;
@@ -139,7 +139,7 @@ function applyItem(g: Game, e: Entity, itemId: string) {
       e.armor = Math.min(200, e.armor + 100);
       break;
     case "zombie_speed":
-      e.buffSpeed = 1.3;
+      e.buffSpeed = 1.2;
       e.buffSpeedUntil = now() + 10;
       break;
     case "zombie_heal":

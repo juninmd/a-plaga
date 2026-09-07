@@ -6,6 +6,7 @@ import { findPath } from "../src/server/nav";
 import { equipSlot, setTime } from "../src/server/physics";
 import { MAP, cellCol, cellRow, isWalkable, worldX, worldZ } from "../src/shared/map";
 import { WEAPONS } from "../src/shared/weapons";
+import { BALANCE, HUMAN_CLASSES, ZOMBIE_CLASSES } from "../src/shared/balance";
 
 class FakeCtx {
   messages: { t: string; d?: unknown }[] = [];
@@ -205,5 +206,34 @@ describe("entrada não confiável", () => {
     g.handleChat(id, undefined as never);
     g.handleChat(id, 42 as never);
     expect(g.chats.length).toBe(before);
+  });
+});
+
+describe("spawn points", () => {
+  it("em todo modo, zumbis e humanos nascem longe uns dos outros e sem sobreposição", () => {
+    const g = new Game();
+    for (let i = 0; i < 8; i++) g.addPlayer(`P${i}`, { send() {} });
+    const seen = new Set<string>();
+    for (let round = 0; round < 40; round++) {
+      g.startRound();
+      seen.add(g.round.mode);
+      const alive = g.players.filter((p) => p.alive);
+      for (const a of alive) {
+        for (const b of alive) {
+          if (a === b) continue;
+          const d = Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z);
+          if (a.team !== b.team) expect(d, `${g.round.mode}: ${a.name}(${a.team}) perto de ${b.name}(${b.team})`).toBeGreaterThanOrEqual(25);
+          else expect(d, `${g.round.mode}: ${a.name} em cima de ${b.name}`).toBeGreaterThan(1);
+        }
+      }
+    }
+    expect(seen.size).toBeGreaterThan(3);
+  });
+
+  it("zumbi comum é mais lento que o humano padrão", () => {
+    const zombie = ZOMBIE_CLASSES.find((c) => c.id === "classic")!;
+    const human = HUMAN_CLASSES.find((c) => c.id === "assault")!;
+    expect(zombie.speed).toBeLessThan(human.speed);
+    expect(zombie.speed * BALANCE.firstZombieFurySpeed).toBeLessThanOrEqual(1.15);
   });
 });

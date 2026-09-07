@@ -68,13 +68,17 @@ export function startRound(g: Game) {
       const first = humans[Math.floor(Math.random() * humans.length)];
       if (first) {
         infect(g, first, null, true);
+        g.relocate(first); // o primeiro zumbi nasce no lado dele, não no meio dos humanos
         g.round.firstZombie = first.name;
       }
       break;
     }
     case "multi": {
       const count = Math.max(2, Math.floor(humans.length * 0.15));
-      for (const p of shuffle(humans).slice(0, count)) infect(g, p, null, true);
+      for (const p of shuffle(humans).slice(0, count)) {
+        infect(g, p, null, true);
+        g.relocate(p);
+      }
       break;
     }
     case "swarm": {

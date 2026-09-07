@@ -59,6 +59,12 @@ export interface BotBrain {
 }
 
 const BOT_TARGET_COUNT = 8;
+const SPAWN_OCCUPIED = 2; // metros: ponto já tem alguém em cima
+const SPAWN_ENEMY_MIN = 25; // metros: distância mínima de um inimigo ao nascer
+
+function shuffle<T>(list: readonly T[]): T[] {
+  return [...list].sort(() => Math.random() - 0.5);
+}
 const BUY_ZONE_RADIUS = 14;
 
 export class Game {
@@ -133,12 +139,8 @@ export class Game {
       const want = pref && pref.side === e.team ? pref.id : e.team === "zombie" ? "classic" : "assault";
       if (want !== e.classId) this.applyClass(e, want);
     }
-    const pool = e.team === "zombie" ? MAP.zombieSpawns : MAP.spawns;
-    const s = pool[Math.floor(Math.random() * pool.length)];
-    e.pos = { x: s.pos.x, y: 0, z: s.pos.z };
-    e.yaw = s.yaw;
+    this.relocate(e);
     e.pitch = 0;
-    e.vel = { x: 0, y: 0, z: 0 };
     e.alive = true;
     e.crouching = false;
     e.respawnAt = 0;
@@ -161,6 +163,33 @@ export class Game {
     }
     giveLoadout(e);
     if (!e.isBot) this.sendTo(e.id, { t: "self", d: this.playerState(e) });
+  }
+
+  /**
+   * Leva a entidade ao ponto de spawn do seu time mais afastado de todo mundo: ninguém nasce
+   * em cima de outro jogador nem com inimigo a menos de SPAWN_ENEMY_MIN metros.
+   */
+  relocate(e: Entity) {
+    const pool = e.team === "zombie" ? MAP.zombieSpawns : MAP.spawns;
+    const others = this.players.filter((p) => p !== e && p.alive);
+    let best = pool[0];
+    let bestScore = -Infinity;
+    for (const s of shuffle(pool)) {
+      let score = 0;
+      for (const o of others) {
+        const d = distance(s.pos, o.pos);
+        if (d < SPAWN_OCCUPIED) score -= 1000;
+        if (o.team !== e.team && d < SPAWN_ENEMY_MIN) score -= 100 * (SPAWN_ENEMY_MIN - d);
+        score += Math.min(d, 30) * (o.team === e.team ? 0.2 : 1);
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = s;
+      }
+    }
+    e.pos = { x: best.pos.x, y: 0, z: best.pos.z };
+    e.yaw = best.yaw;
+    e.vel = { x: 0, y: 0, z: 0 };
   }
 
   applyClass(e: Entity, classId: string) {
