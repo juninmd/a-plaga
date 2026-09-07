@@ -17,7 +17,7 @@ import type {
 } from "../shared/protocol.js";
 import { PRIMARY_WEAPONS, RECOIL_DECAY_PER_SEC, WEAPONS } from "../shared/weapons.js";
 import { buyItem, dropAmmoPack, updatePickups, updateProjectiles, useAbility } from "./abilities.js";
-import { handleAttack, handleMelee, startReload } from "./combat.js";
+import { damage, handleAttack, handleMelee, startReload } from "./combat.js";
 import {
   createEntity,
   distance,
@@ -59,6 +59,7 @@ export interface BotBrain {
 }
 
 const BOT_TARGET_COUNT = 8;
+const FALL_DAMAGE_SPEED = -12; // m/s ao tocar o chão (queda de ~7 m)
 const SPAWN_OCCUPIED = 2; // metros: ponto já tem alguém em cima
 const SPAWN_ENEMY_MIN = 25; // metros: distância mínima de um inimigo ao nascer
 
@@ -278,7 +279,13 @@ export class Game {
       }
       // Sub-passos: evita atravessar alvos entre ticks
       for (let s = 0; s < SUB; s++) {
+        const fallSpeed = e.vel.y;
         moveEntity(e, subDt);
+        // Dano de queda (CS): cair de mais de ~7 m machuca; zumbi aguenta mais
+        if (e.onGround && fallSpeed < FALL_DAMAGE_SPEED) {
+          const dmg = (FALL_DAMAGE_SPEED - fallSpeed) * (e.team === "zombie" ? 6 : 10);
+          damage(this, e, e, dmg, false, 0);
+        }
         handleAttack(this, e);
         handleMelee(this, e);
       }

@@ -71,7 +71,7 @@ describe("loadout e compra de armas", () => {
     expect(e.weapon).toBe("ak47");
     expect(e.ammo).toBe(WEAPONS.ak47.magazine);
 
-    e.pos = { x: worldX(15), y: 0, z: worldZ(20) }; // meio do mapa
+    e.pos = { x: worldX(12), y: 0, z: worldZ(13) }; // meio do mapa
     ctxs[0].messages = [];
     g.handleBuyWeapon(e.id, "awp");
     expect(e.weapon).toBe("ak47");
@@ -118,8 +118,8 @@ describe("loadout e compra de armas", () => {
     const z = g.players[1];
     z.team = "zombie";
     z.spawnProtectUntil = 0;
-    h.pos = { x: worldX(15), y: 0, z: worldZ(19) };
-    z.pos = { x: worldX(15), y: 0, z: worldZ(19) - 1.2 };
+    h.pos = { x: worldX(12), y: 0, z: worldZ(13) };
+    z.pos = { x: worldX(12), y: 0, z: worldZ(13) - 1.2 };
     equipSlot(h, 3, true);
     h.input.attack = true;
     h.yaw = 0; // olhando para -z
@@ -235,5 +235,30 @@ describe("spawn points", () => {
     const human = HUMAN_CLASSES.find((c) => c.id === "assault")!;
     expect(zombie.speed).toBeLessThan(human.speed);
     expect(zombie.speed * BALANCE.firstZombieFurySpeed).toBeLessThanOrEqual(1.15);
+  });
+});
+
+describe("dano de queda", () => {
+  it("cair de alto machuca, pular normal não", () => {
+    const g = new Game();
+    g.addPlayer("Q", { send() {} });
+    g.addPlayer("Z", { send() {} });
+    const e = g.players[0];
+    g.players[1].team = "zombie"; // sem os dois times o round acaba no primeiro tick
+    g.round.phase = "hunt";
+    g.round.timeLeft = 120;
+    setTime(100);
+    e.spawnProtectUntil = 0;
+    g.serverTime = 100;
+    const hp0 = e.hp; // maxHp muda com o bônus de último humano
+    e.input.jump = true;
+    for (let i = 0; i < 40; i++) g.tick(1 / 20);
+    expect(e.hp).toBe(hp0);
+    e.input.jump = false;
+    e.pos.y = 12;
+    e.vel.y = 0;
+    for (let i = 0; i < 60; i++) g.tick(1 / 20);
+    expect(e.pos.y).toBeLessThan(0.01);
+    expect(e.hp).toBeLessThan(hp0);
   });
 });

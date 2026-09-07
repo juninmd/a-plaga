@@ -110,8 +110,8 @@ describe("regressões de combate", () => {
     z.isBot = true;
     h.team = "human";
     h.spawnProtectUntil = 0;
-    z.pos = { x: worldX(15), y: 0, z: worldZ(15) };
-    h.pos = { x: worldX(15) + 1.2, y: 0, z: worldZ(15) };
+    z.pos = { x: worldX(12), y: 0, z: worldZ(13) };
+    h.pos = { x: worldX(12) + 1.2, y: 0, z: worldZ(13) };
     z.yaw = -Math.PI / 2; // olhando para +x
     const hpAntes = h.hp;
     handleMelee(g, z);

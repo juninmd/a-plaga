@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COLS, GRID, MAP, ROWS, isWalkable, cellCol, cellRow, resolveCollision } from "../src/shared/map.js";
+import { COLS, GRID, MAP, ROWS, canStep, isWalkable, cellCol, cellRow, resolveCollision } from "../src/shared/map.js";
 
 describe("mapa de_plague2", () => {
   it("grid é retangular e fechado por paredes", () => {
@@ -21,7 +21,9 @@ describe("mapa de_plague2", () => {
       const k = `${c},${r}`;
       if (seen.has(k) || !isWalkable(c, r)) continue;
       seen.add(k);
-      q.push([c + 1, r], [c - 1, r], [c, r + 1], [c, r - 1]);
+      for (const [nc, nr] of [[c + 1, r], [c - 1, r], [c, r + 1], [c, r - 1]] as [number, number][]) {
+        if (canStep(c, r, nc, nr)) q.push([nc, nr]);
+      }
     }
     const unreachable: string[] = [];
     for (let r = 0; r < ROWS; r++)
@@ -47,5 +49,32 @@ describe("mapa de_plague2", () => {
     resolveCollision(up, upVel, 0.35, MAP.boxes);
     expect(up.y).toBeLessThanOrEqual(arch.min.y - 1.8 + 1e-6);
     expect(upVel.y).toBe(0);
+  });
+});
+
+describe("física de plataformas e escadas", () => {
+  it("encostar na lateral de uma parede alta não vira chão (sem escalar feito aranha)", () => {
+    const wall = MAP.boxes.find((b) => b.kind === "wall" && b.min.z > -MAP.size.z + 1)!;
+    const pos = { x: (wall.min.x + wall.max.x) / 2, y: 3, z: wall.min.z - 0.2 };
+    const vel = { x: 0, y: -2, z: 1 };
+    const out = { ground: false };
+    resolveCollision(pos, vel, 0.35, MAP.boxes, 1.8, out);
+    expect(out.ground).toBe(false);
+    expect(pos.y).toBe(3);
+  });
+
+  it("sobe a escada degrau a degrau até a plataforma", () => {
+    const steps = MAP.boxes.filter((b) => b.kind === "step");
+    expect(steps.length).toBeGreaterThan(0);
+    // Escada '^' do B site: célula (1,3) sobe para o norte até a plataforma (1,2)
+    const x = (MAP.boxes.find((b) => b.kind === "step" && b.min.x < -40)!.min.x + 2);
+    const pos = { x, y: 0, z: -MAP.size.z + 4 * 4 - 0.3 };
+    const vel = { x: 0, y: 0, z: -1 };
+    for (let i = 0; i < 80; i++) {
+      pos.z -= 0.08;
+      vel.y = -0.5;
+      resolveCollision(pos, vel, 0.35, MAP.boxes, 1.8);
+    }
+    expect(pos.y).toBeCloseTo(2, 5);
   });
 });

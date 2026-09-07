@@ -119,6 +119,8 @@ export function buildWorld(scene: THREE.Scene): World {
         crates.push(boxGeo(min.x, min.y, min.z, max.x, max.y, max.z));
         break;
       case "pillar":
+      case "platform":
+      case "step":
         pillars.push(boxGeo(min.x, min.y, min.z, max.x, max.y, max.z));
         break;
       case "barrel":

@@ -1,4 +1,4 @@
-import { COLS, ROWS, cellCol, cellRow, isWalkable, worldX, worldZ } from "../shared/map.js";
+import { COLS, ROWS, canStep, cellCol, cellRow, isWalkable, worldX, worldZ } from "../shared/map.js";
 import type { Vec3 } from "../shared/protocol.js";
 
 // ===== A* no grid do mapa (8 vizinhos, sem cortar cantos) =====
@@ -50,9 +50,9 @@ export function findPath(from: Vec3, to: Vec3): Vec3[] {
     if (cur.c === gc && cur.r === gr) return rebuild(cur, to);
     for (const [dc, dr] of DIRS) {
       const nc = cur.c + dc, nr = cur.r + dr;
-      if (!isWalkable(nc, nr)) continue;
+      if (!canStep(cur.c, cur.r, nc, nr)) continue;
       // Diagonal só se os dois ortogonais estão livres (sem raspar quina)
-      if (dc !== 0 && dr !== 0 && (!isWalkable(cur.c + dc, cur.r) || !isWalkable(cur.c, cur.r + dr))) continue;
+      if (dc !== 0 && dr !== 0 && (!canStep(cur.c, cur.r, cur.c + dc, cur.r) || !canStep(cur.c, cur.r, cur.c, cur.r + dr))) continue;
       const g = cur.g + (dc !== 0 && dr !== 0 ? 1.41 : 1);
       const nk = key(nc, nr);
       if (closed.has(nk)) continue;

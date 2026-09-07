@@ -13,10 +13,10 @@ const PATH_REFRESH = 0.6;
 const MAX_PATHS_PER_TICK = 3;
 // Pontos de patrulha: A site, B site, mid, long
 const PATROL: Vec3[] = [
-  { x: worldX(28), y: 0, z: worldZ(5) },
+  { x: worldX(21), y: 0, z: worldZ(3) },
   { x: worldX(4), y: 0, z: worldZ(4) },
-  { x: worldX(15), y: 0, z: worldZ(14) },
-  { x: worldX(30), y: 0, z: worldZ(20) },
+  { x: worldX(12), y: 0, z: worldZ(9) },
+  { x: worldX(22), y: 0, z: worldZ(16) },
 ];
 
 let pathsThisTick = 0;

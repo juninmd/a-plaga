@@ -5,11 +5,11 @@ import { BALANCE, HUMAN_CLASSES, ZOMBIE_CLASSES, WEAPONS } from "../src/shared/b
 import { effectiveSpread } from "../src/shared/weapons.js";
 
 // Meio do mapa (corredor central): coluna 15, linha 19 — chão aberto
-const MID = { x: worldX(15), z: worldZ(19) };
+const MID = { x: worldX(12), z: worldZ(13) };
 
 describe("física do mapa", () => {
   it("resolve colisão contra parede norte", () => {
-    const pos = { x: worldX(14), y: 0, z: -MAP_SIZE.z + 4.2 };
+    const pos = { x: worldX(12), y: 0, z: -MAP_SIZE.z + 4.2 };
     const vel = { x: 0, y: 0, z: -1 };
     const hit = resolveCollision(pos, vel, 0.35, MAP.boxes);
     expect(hit).toBe(true);
@@ -100,9 +100,9 @@ describe("tiro (hitscan)", () => {
   it("não acerta através de parede", () => {
     const shooter = createEntity(1, "s", HUMAN_CLASSES[0], "human", true);
     const target = createEntity(2, "t", ZOMBIE_CLASSES[0], "zombie", true);
-    // Parede entre o meio (col 15) e o long A (col 30) na linha 12
-    shooter.pos = { x: worldX(15), y: 0, z: worldZ(12) };
-    target.pos = { x: worldX(30), y: 0, z: worldZ(12) };
+    // Parede entre o meio (col 12) e o long A (col 22) na linha 12
+    shooter.pos = { x: worldX(12), y: 0, z: worldZ(12) };
+    target.pos = { x: worldX(22), y: 0, z: worldZ(12) };
     const res = shootRay({ x: shooter.pos.x, y: 1.6, z: shooter.pos.z }, { x: 1, y: 0, z: 0 }, [shooter, target], shooter.id, 100);
     expect(res.hit).toBe(false);
     expect(res.normal).not.toBeNull();

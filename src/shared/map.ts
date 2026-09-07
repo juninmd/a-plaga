@@ -1,7 +1,7 @@
 import type { Vec3 } from "./protocol.js";
 import { BALANCE } from "./balance.js";
 
-export type BoxKind = "wall" | "crate" | "low" | "arch" | "roof" | "barrel" | "pillar";
+export type BoxKind = "wall" | "crate" | "low" | "arch" | "roof" | "barrel" | "pillar" | "platform" | "step";
 
 export interface Aabb {
   min: Vec3;
@@ -24,53 +24,42 @@ export interface MapDef {
   floor: { color: number };
 }
 
-// ===== "de_plague2" — layout inspirado no de_dust2, adaptado para Zombie Plague =====
+// ===== "de_plague2" — layout inspirado no de_dust2, compacto, adaptado para Zombie Plague =====
 // Norte = linha 0. Humanos (CT) nascem ao norte, zumbis (T) ao sul.
 //   '#' parede 8m       'C' caixote 3m       'x' caixote baixo 1.5m (dá pra subir)
 //   'A' arco/porta (passa por baixo)          'T' túnel coberto (teto a 3.5m)
-//   'B' barril (sólido)  'P' pilar             '.' chão
+//   'B' barril (sólido)  'P' pilar             'w' saco de areia 1m (pula por cima)
+//   'R' plataforma 2m (anda em cima)          '^' 'v' '<' '>' escada subindo na direção da seta
 export const CELL = 4;
 export const GRID: readonly string[] = [
-  "####################################", // 0
-  "#.......##..........##.............#", // 1  B site | CT spawn | A site
-  "#..CC...##..........##.....CC..B...#", // 2
-  "#..C....AA..........AA....xCC......#", // 3  B doors | rampa A
-  "#.......AA..........AA.............#", // 4
-  "#.x.....##..........##...x.....B...#", // 5
-  "#.......##..........##.....P.......#", // 6
-  "#...x...######....####.............#", // 7  mid doors
-  "###AA#########....####.............#", // 8  B -> túneis
-  "#TTTTT########....####AA###........#", // 9  short/catwalk -> A | long A
-  "#TTTTT########..........###........#", // 10
-  "#TTTTT########.....x....###...B....#", // 11
-  "#TTTTT########....#########........#", // 12
-  "#TTTTT########....#########...x....#", // 13
-  "#TTTTT########.C..#########........#", // 14
-  "#TTTTT########....#########........#", // 15
-  "###TT#########....###########AA#####", // 16 pinch túneis | long doors
-  "#.....########....#########........#", // 17
-  "#..x..########....#########.....x..#", // 18
-  "#.....########....#########........#", // 19
-  "#.....########....#########.B......#", // 20
-  "#.....#......A....#########........#", // 21 túneis <-> mid
-  "#.....#......A....#########........#", // 22
-  "#.....########..x.#########........#", // 23
-  "#..C..########....#########.....B..#", // 24
-  "#.....########....#########........#", // 25
-  "#.....########....#########........#", // 26
-  "#.....#########AAA###########...####", // 27 saídas para o T spawn
-  "#..................................#", // 28 T spawn
-  "#...x......C.C........B............#", // 29
-  "#.........####.........#####.......#", // 30
-  "#.........####..x......#####...C...#", // 31
-  "#.........####.........#####.......#", // 32
-  "#.....C............................#", // 33
-  "#.......x............x.............#", // 34
-  "#..........CC.........BB...........#", // 35
-  "#..................................#", // 36
-  "#....x.....................x.......#", // 37
-  "#..................................#", // 38
-  "####################################", // 39
+  "##########################", // 0
+  "#RR....##........##..C.RR#", // 1  B site (plataforma) | CT spawn | A site (plataforma)
+  "#RR.x..AA........AA...>RR#", // 2  B doors | rampa A | escada p/ plataforma A
+  "#^.....##...x....##....B.#", // 3  escada p/ plataforma B
+  "#..C...##........##.x....#", // 4
+  "#......##........##......#", // 5
+  "###AA######....#####...###", // 6  B->túneis | mid doors | A->long
+  "#TTTT######....####......#", // 7  túneis cobertos | mid | long
+  "#TTTT######....####..x...#", // 8
+  "#TTTT######..............#", // 9  short: mid <-> long
+  "#TTTT######R.......w.....#", // 10 plataforma do mid | saco de areia no long
+  "#TTTT######^...####......#", // 11 escada p/ plataforma do mid
+  "#..x.######....#####.AA###", // 12 long doors
+  "#.........A....####......#", // 13 túneis <-> mid
+  "#.........A....####......#", // 14
+  "#....######....####.....R#", // 15 plataforma do long
+  "#.C..######.x..####..C..R#", // 16
+  "#....######....####.....^#", // 17 escada p/ plataforma do long
+  "#....######....####......#", // 18
+  "#....######....####......#", // 19
+  "#....#######AA#######...##", // 20 saídas para o T spawn
+  "#........................#", // 21 T spawn
+  "#..x...C.....RR.....x....#", // 22 plataforma do T spawn
+  "#......C.....RR<...####..#", // 23 escada p/ plataforma
+  "#.B......x.........####.B#", // 24
+  "#...........C............#", // 25
+  "#.....x............x.....#", // 26
+  "##########################", // 27
 ];
 
 export const COLS = GRID[0].length;
@@ -79,8 +68,13 @@ export const ROWS = GRID.length;
 const WALL_H = 8;
 const CRATE_H = 3;
 const LOW_H = 1.5;
+const SANDBAG_H = 1.0;
 const ARCH_Y = 3.2; // altura livre debaixo de um arco
 const TUNNEL_Y = 3.5;
+export const PLATFORM_H = 2;
+const STEPS = 4; // degraus por célula de escada (rise 0.5 m, run 1 m)
+/** Altura máxima que um jogador sobe andando (degraus, meio-fio). */
+export const STEP_HEIGHT = 0.55;
 
 export const MAP_SIZE: Vec3 = { x: (COLS * CELL) / 2, y: 40, z: (ROWS * CELL) / 2 };
 
@@ -97,11 +91,50 @@ export function cellRow(z: number): number {
   return Math.max(0, Math.min(ROWS - 1, Math.floor((z + MAP_SIZE.z) / CELL)));
 }
 
-/** Célula atravessável a pé (bots usam para A*). Caixotes baixos contam como bloqueio. */
-export function isWalkable(c: number, r: number): boolean {
-  if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
+const STAIR_DIR: Record<string, [number, number]> = { "^": [0, -1], v: [0, 1], "<": [-1, 0], ">": [1, 0] };
+
+export type CellType = "blocked" | "floor" | "platform" | "stair";
+
+export function cellType(c: number, r: number): CellType {
+  if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return "blocked";
   const ch = GRID[r][c];
-  return ch === "." || ch === "A" || ch === "T";
+  if (ch === "." || ch === "A" || ch === "T") return "floor";
+  if (ch === "R") return "platform";
+  if (ch in STAIR_DIR) return "stair";
+  return "blocked";
+}
+
+/** Célula atravessável a pé (bots usam para A*). Caixotes contam como bloqueio. */
+export function isWalkable(c: number, r: number): boolean {
+  return cellType(c, r) !== "blocked";
+}
+
+/**
+ * Dá para andar da célula a para a vizinha b? Chão não sobe direto numa plataforma (2 m):
+ * só pela escada, e a escada só desemboca na plataforma na direção da seta.
+ */
+export function canStep(c0: number, r0: number, c1: number, r1: number): boolean {
+  const a = cellType(c0, r0);
+  const b = cellType(c1, r1);
+  if (a === "blocked" || b === "blocked") return false;
+  const dc = c1 - c0;
+  const dr = r1 - r0;
+  if (a === "stair" || b === "stair") {
+    if (dc !== 0 && dr !== 0) return false; // sem diagonal em escada
+    const stairFirst = a === "stair";
+    const sc = stairFirst ? c0 : c1;
+    const sr = stairFirst ? r0 : r1;
+    const dirC = stairFirst ? dc : -dc;
+    const dirR = stairFirst ? dr : -dr;
+    const other = stairFirst ? b : a;
+    const up = STAIR_DIR[GRID[sr][sc]];
+    const towardsTop = up[0] === dirC && up[1] === dirR;
+    if (other === "platform") return towardsTop;
+    if (other === "floor") return !towardsTop;
+    return true; // escada com escada
+  }
+  if ((a === "floor") !== (b === "floor")) return false; // chão x plataforma
+  return true;
 }
 
 function box(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, kind: BoxKind): Aabb {
@@ -122,20 +155,41 @@ function buildBoxes(): { boxes: Aabb[]; props: Prop[] } {
     while (c < COLS) {
       const ch = GRID[r][c];
       // Mescla runs horizontais do mesmo tipo (menos AABBs, menos draw calls)
-      if (ch === "#" || ch === "A" || ch === "T") {
+      if (ch === "#" || ch === "A" || ch === "T" || ch === "R") {
         let c1 = c;
         while (c1 + 1 < COLS && GRID[r][c1 + 1] === ch) c1++;
         if (ch === "#") b.push(box(cx0(c), 0, rz0(r), cx0(c1 + 1), WALL_H, rz0(r + 1), "wall"));
         else if (ch === "A") b.push(box(cx0(c), ARCH_Y, rz0(r), cx0(c1 + 1), WALL_H, rz0(r + 1), "arch"));
+        else if (ch === "R") b.push(box(cx0(c), 0, rz0(r), cx0(c1 + 1), PLATFORM_H, rz0(r + 1), "platform"));
         else b.push(box(cx0(c), TUNNEL_Y, rz0(r), cx0(c1 + 1), TUNNEL_Y + 0.6, rz0(r + 1), "roof"));
         c = c1 + 1;
         continue;
       }
-      if (ch === "C" || ch === "x") {
+      if (ch in STAIR_DIR) {
+        // Degraus do lado baixo (oposto à seta) até a borda alta, no nível da plataforma
+        const [dx, dz] = STAIR_DIR[ch];
+        const run = CELL / STEPS;
+        for (let k = 0; k < STEPS; k++) {
+          const h = (PLATFORM_H / STEPS) * (k + 1);
+          const lo = k * run;
+          const hi = (k + 1) * run;
+          if (dx !== 0) {
+            const x0 = dx > 0 ? cx0(c) + lo : cx0(c + 1) - lo;
+            const x1 = dx > 0 ? cx0(c) + hi : cx0(c + 1) - hi;
+            b.push(box(x0, 0, rz0(r), x1, h, rz0(r + 1), "step"));
+          } else {
+            const z0 = dz > 0 ? rz0(r) + lo : rz0(r + 1) - lo;
+            const z1 = dz > 0 ? rz0(r) + hi : rz0(r + 1) - hi;
+            b.push(box(cx0(c), 0, z0, cx0(c + 1), h, z1, "step"));
+          }
+        }
+      } else if (ch === "C" || ch === "x") {
         const h = ch === "C" ? CRATE_H : LOW_H;
         const pad = 0.4; // caixote menor que a célula — dá pra contornar
         b.push(box(cx0(c) + pad, 0, rz0(r) + pad, cx0(c + 1) - pad, h, rz0(r + 1) - pad, ch === "C" ? "crate" : "low"));
         props.push({ kind: ch === "C" ? "crate" : "lowcrate", pos: { x: worldX(c), y: 0, z: worldZ(r) } });
+      } else if (ch === "w") {
+        b.push(box(cx0(c), 0, rz0(r) + 1.2, cx0(c + 1), SANDBAG_H, rz0(r + 1) - 1.2, "low"));
       } else if (ch === "B") {
         const r0 = 0.55;
         b.push(box(worldX(c) - r0, 0, worldZ(r) - r0, worldX(c) + r0, 1.2, worldZ(r) + r0, "barrel"));
@@ -164,14 +218,14 @@ export const MAP: MapDef = {
   props: built.props,
   // Humanos: CT spawn (norte), olhando para o sul (meio/T)
   spawns: [
-    spawn(11, 2, Math.PI), spawn(13, 2, Math.PI), spawn(15, 2, Math.PI), spawn(17, 2, Math.PI),
-    spawn(12, 4, Math.PI), spawn(14, 4, Math.PI), spawn(16, 4, Math.PI), spawn(18, 4, Math.PI),
-    spawn(11, 5, Math.PI), spawn(15, 5, Math.PI), spawn(13, 3, Math.PI), spawn(17, 3, Math.PI),
+    spawn(9, 1, Math.PI), spawn(11, 1, Math.PI), spawn(13, 1, Math.PI), spawn(15, 1, Math.PI),
+    spawn(10, 3, Math.PI), spawn(14, 3, Math.PI), spawn(16, 3, Math.PI), spawn(9, 4, Math.PI),
+    spawn(11, 4, Math.PI), spawn(13, 4, Math.PI), spawn(15, 4, Math.PI), spawn(12, 5, Math.PI),
   ],
   // Zumbis: T spawn (sul), olhando para o norte
   zombieSpawns: [
-    spawn(3, 36, 0), spawn(8, 37, 0), spawn(15, 37, 0), spawn(19, 36, 0),
-    spawn(25, 37, 0), spawn(31, 36, 0), spawn(9, 33, 0), spawn(30, 33, 0),
+    spawn(3, 26, 0), spawn(8, 26, 0), spawn(12, 26, 0), spawn(16, 26, 0),
+    spawn(22, 26, 0), spawn(24, 25, 0), spawn(4, 24, 0), spawn(11, 25, 0),
   ],
   floor: { color: 0xc9a06a },
 };
@@ -219,7 +273,13 @@ export function rayAabb(orig: Vec3, dir: Vec3, b: Aabb): number {
  * Colisão por eixo com correção de penetração. `height` é a altura do corpo (agachado é menor),
  * usada para passar por baixo de arcos/túneis e bater a cabeça neles. Retorna true se encostou.
  */
-export function resolveCollision(pos: Vec3, vel: Vec3, radius: number, boxes: Aabb[], height: number = BALANCE.playerHeight): boolean {
+export interface CollisionOut {
+  /** true quando o corpo ficou apoiado no topo de um box neste passo */
+  ground: boolean;
+}
+
+export function resolveCollision(pos: Vec3, vel: Vec3, radius: number, boxes: Aabb[], height: number = BALANCE.playerHeight, out?: CollisionOut): boolean {
+  if (out) out.ground = false;
   let hit = false;
   for (let pass = 0; pass < 2; pass++) {
     for (const b of boxes) {
@@ -238,10 +298,12 @@ export function resolveCollision(pos: Vec3, vel: Vec3, radius: number, boxes: Aa
         if (vel.y > 0) vel.y = 0;
         continue;
       }
-      // Caindo perto do topo → aterrissa em cima (dá pra subir em caixotes)
-      if (vel.y <= 0 && pos.y >= b.max.y - 0.5) {
+      // Topo ao alcance de um passo (degrau, caixote baixo ao cair): sobe e fica apoiado.
+      // Tocar a lateral de uma parede alta NÃO conta como chão — era isso que deixava escalar feito aranha.
+      if (vel.y <= 0.01 && b.max.y - pos.y <= STEP_HEIGHT) {
         pos.y = b.max.y;
         vel.y = 0;
+        if (out) out.ground = true;
         continue;
       }
       // Empurra para fora na menor penetração (x ou z)

@@ -1,5 +1,5 @@
 import { BALANCE } from "./balance.js";
-import { MAP, resolveCollision } from "./map.js";
+import { MAP, resolveCollision, type CollisionOut } from "./map.js";
 import type { Vec3 } from "./protocol.js";
 
 // ===== Modelo de movimento compartilhado: o servidor simula e o cliente prediz com o MESMO código =====
@@ -72,8 +72,9 @@ export function stepMovement(m: MoverState, input: MoveInput, dt: number) {
   m.pos.y += m.vel.y * dt;
   m.pos.z += m.vel.z * dt;
 
-  const wasAbove = m.pos.y > 0.05;
-  const hit = resolveCollision(m.pos, m.vel, BALANCE.playerRadius * m.scale, MAP.boxes, moverHeight(m));
-  m.onGround = m.pos.y <= 0.01 || (wasAbove && hit && m.vel.y <= 0);
-  if (m.onGround) m.vel.y = 0;
+  const support: CollisionOut = { ground: false };
+  resolveCollision(m.pos, m.vel, BALANCE.playerRadius * m.scale, MAP.boxes, moverHeight(m), support);
+  // Chão = piso ou topo de box. Encostar na lateral de uma parede não é chão.
+  m.onGround = m.pos.y <= 0.01 || support.ground;
+  if (m.onGround && m.vel.y < 0) m.vel.y = 0;
 }
