@@ -29,11 +29,16 @@ export function handleFx(renderer: Renderer, fx: FxEvent) {
       const w = WEAPONS[fx.weapon ?? state.weapon];
       if (from) renderer.tracer(from, pos, fx.color);
       if (mine) {
-        renderer.viewmodelFire();
-        registerShot();
-        const r = w?.recoil ?? 0.7;
-        renderer.punch(-r * 0.012, (Math.random() - 0.5) * r * 0.006);
-        audio.shoot(w?.sound ?? "rifle", 1);
+        // O clique já deu o feedback (predição); o tracer que chega logo depois só confirma
+        const predicted = performance.now() - state.predictedShotAt < 120;
+        state.predictedShotAt = -1e9;
+        if (!predicted) {
+          renderer.viewmodelFire();
+          registerShot();
+          const r = w?.recoil ?? 0.7;
+          renderer.punch(-r * 0.012, (Math.random() - 0.5) * r * 0.006);
+          audio.shoot(w?.sound ?? "rifle", 1);
+        }
       } else if (from) {
         audio.shoot(w?.sound ?? "rifle", fxVolume(from, w?.sound === "sniper" ? 120 : 60) * 0.7);
       }

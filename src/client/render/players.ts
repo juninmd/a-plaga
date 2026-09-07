@@ -23,6 +23,8 @@ interface RenderedPlayer extends BuiltModel {
   /** Momento (ms) da morte; corpo cai e some depois. */
   diedAt: number;
   alive: boolean;
+  /** Pose interpolada (definida por frame); cai no snapshot cru quando ausente. */
+  pose: { x: number; y: number; z: number; yaw: number; pitch: number } | null;
 }
 
 const CORPSE_MS = 8000;
@@ -76,6 +78,7 @@ export class PlayerRegistry {
       lastColor: -1,
       diedAt: 0,
       alive: p.alive,
+      pose: null,
     };
   }
 
@@ -177,6 +180,16 @@ export class PlayerRegistry {
     if (rp) rp.swing = 1;
   }
 
+  /** Pose vinda do interpolador (chamada a cada frame, sem alocar). */
+  setPose(id: number, x: number, y: number, z: number, yaw: number, pitch: number) {
+    const rp = this.players.get(id);
+    if (!rp) return;
+    if (!rp.pose) rp.pose = { x, y, z, yaw, pitch };
+    else {
+      rp.pose.x = x; rp.pose.y = y; rp.pose.z = z; rp.pose.yaw = yaw; rp.pose.pitch = pitch;
+    }
+  }
+
   update(dt: number) {
     const nowMs = performance.now();
     for (const rp of this.players.values()) {
@@ -190,13 +203,23 @@ export class PlayerRegistry {
       rp.nameTag.visible = rp.group.visible;
       if (!rp.group.visible) continue;
 
+      // A suavização vem do interpolador de snapshots; aqui só aplica a pose
       const lerp = 1 - Math.exp(-12 * dt);
-      rp.group.position.x += (p.pos.x - rp.group.position.x) * lerp;
-      rp.group.position.z += (p.pos.z - rp.group.position.z) * lerp;
-      rp.group.position.y += (p.pos.y - rp.group.position.y) * Math.min(1, lerp * 2);
+      const pose = rp.pose;
+      const px = pose ? pose.x : p.pos.x;
+      const py = pose ? pose.y : p.pos.y;
+      const pz = pose ? pose.z : p.pos.z;
+      const yaw = pose ? pose.yaw : p.yaw;
+      const pitch = pose ? pose.pitch : p.pitch;
+      if (pose) rp.group.position.set(px, py, pz);
+      else {
+        rp.group.position.x += (px - rp.group.position.x) * lerp;
+        rp.group.position.z += (pz - rp.group.position.z) * lerp;
+        rp.group.position.y += (py - rp.group.position.y) * Math.min(1, lerp * 2);
+      }
       rp.curScale += (p.scale - rp.curScale) * lerp;
       rp.group.scale.setScalar(rp.curScale);
-      rp.group.rotation.y = p.yaw;
+      rp.group.rotation.y = yaw;
 
       // Ciclo de caminhada pela velocidade real informada pelo servidor
       const speed = p.speed ?? 0;
@@ -218,8 +241,8 @@ export class PlayerRegistry {
         rp.armL.rotation.x = rp.armRest.l + Math.sin(rp.walkPhase) * 0.2 - sw * 1.2;
         rp.armR.rotation.x = rp.armRest.r - Math.sin(rp.walkPhase) * 0.2 - sw * 1.2;
       } else {
-        rp.armR.rotation.x = rp.armRest.r - p.pitch * 0.6 - sw * 0.8;
-        rp.armL.rotation.x = rp.armRest.l - p.pitch * 0.6 + swing * 0.1;
+        rp.armR.rotation.x = rp.armRest.r - pitch * 0.6 - sw * 0.8;
+        rp.armL.rotation.x = rp.armRest.l - pitch * 0.6 + swing * 0.1;
       }
     }
   }

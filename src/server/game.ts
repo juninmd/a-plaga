@@ -438,6 +438,7 @@ export class Game {
       reloading: e.reloading > 0,
       crouching: e.crouching,
       speed: Math.round(horizontalSpeed(e) * 100) / 100,
+      vel: e.vel,
       slots: [e.loadout[1]?.id ?? null, e.loadout[2]?.id ?? null, e.loadout[3]?.id ?? null],
     };
   }

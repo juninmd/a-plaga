@@ -1,7 +1,8 @@
-import { MAP, resolveCollision, raycastMap, type Aabb } from "../shared/map.js";
+import { MAP, raycastMap, type Aabb } from "../shared/map.js";
 import type { Vec3, WeaponSlot } from "../shared/protocol.js";
 import { BALANCE, type ClassDef } from "../shared/balance.js";
 import { WEAPONS } from "../shared/weapons.js";
+import { stepMovement, type MoverState } from "../shared/movement.js";
 
 export interface SlotState {
   id: string;
@@ -238,44 +239,21 @@ export function horizontalSpeed(e: Entity): number {
 export function moveEntity(e: Entity, dt: number) {
   const frozen = e.frozenUntil > now();
   const input = frozen ? { ...e.input, moveX: 0, moveY: 0, jump: false } : e.input;
-
-  // Agachar: só levanta se a cabeça couber
-  if (input.crouch) e.crouching = true;
-  else if (e.crouching) {
-    const probe = { ...e.pos };
-    const pv = { x: 0, y: 0, z: 0 };
-    const blocked = resolveCollision(probe, pv, BALANCE.playerRadius * e.scale, MAP.boxes, BALANCE.playerHeight * e.scale) && probe.y < e.pos.y - 0.01;
-    if (!blocked) e.crouching = false;
-  }
-
-  const sin = Math.sin(e.yaw);
-  const cos = Math.cos(e.yaw);
-  const fx = -sin * input.moveY + cos * input.moveX;
-  const fz = -cos * input.moveY - sin * input.moveX;
-  const len = Math.hypot(fx, fz) || 1;
-  const speedBoost = e.buffSpeedUntil > now() ? e.buffSpeed : 1;
-  const crouchMult = e.crouching ? BALANCE.crouchSpeedMult : 1;
-  const speed = BALANCE.baseSpeed * e.speedMult * speedBoost * crouchMult;
-  const targetVx = (fx / len) * speed;
-  const targetVz = (fz / len) * speed;
-  const accel = e.onGround ? 60 : 8;
-  e.vel.x += (targetVx - e.vel.x) * Math.min(1, accel * dt);
-  e.vel.z += (targetVz - e.vel.z) * Math.min(1, accel * dt);
-
-  if (input.jump && e.onGround && !e.crouching) {
-    e.vel.y = BALANCE.jumpVel / Math.sqrt(e.gravityMult);
-  }
-  e.vel.y -= BALANCE.gravity * e.gravityMult * dt;
-  if (e.vel.y < -30) e.vel.y = -30;
-
-  e.pos.x += e.vel.x * dt;
-  e.pos.y += e.vel.y * dt;
-  e.pos.z += e.vel.z * dt;
-
-  const wasAbove = e.pos.y > 0.05;
-  const hit = resolveCollision(e.pos, e.vel, BALANCE.playerRadius * e.scale, MAP.boxes, bodyHeight(e));
-  e.onGround = e.pos.y <= 0.01 || (wasAbove && hit && e.vel.y <= 0);
-  if (e.onGround) e.vel.y = 0;
+  // Mesma simulação que o cliente usa para predição (src/shared/movement.ts)
+  const mover: MoverState = {
+    pos: e.pos,
+    vel: e.vel,
+    onGround: e.onGround,
+    crouching: e.crouching,
+    yaw: e.yaw,
+    speedMult: e.speedMult,
+    buffSpeed: e.buffSpeedUntil > now() ? e.buffSpeed : 1,
+    gravityMult: e.gravityMult,
+    scale: e.scale,
+  };
+  stepMovement(mover, input, dt);
+  e.onGround = mover.onGround;
+  e.crouching = mover.crouching;
 }
 
 // ===== Raycast de tiro: cabeça, corpo, mapa =====

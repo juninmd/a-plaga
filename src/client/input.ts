@@ -27,6 +27,8 @@ export interface InputHandlers {
   onShopDigit(d: number): boolean; // true = consumido pelo menu de compra
   onSwitch(slot: WeaponSlot): void;
   onReload(): void;
+  /** Clique de tiro: feedback local imediato (predição). */
+  onFire?(): void;
 }
 
 let canvas: HTMLElement | null = null;
@@ -62,7 +64,7 @@ export function buildInput(): InputState {
 }
 
 export function sendInput() {
-  if (state.id < 0) return;
+  if (state.id < 0 || !look.initialized) return;
   const input = buildInput();
   state.ui.zooming = input.zoom;
   net.send({ t: "input", d: input });
@@ -154,6 +156,7 @@ export function setupInput(el: HTMLElement, mobile: boolean, h: InputHandlers) {
       return;
     }
     mouseDown.add(e.button);
+    if (e.button === 0) h.onFire?.();
     sendInput();
   });
 

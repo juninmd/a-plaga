@@ -16,17 +16,22 @@ import {
   updateHUD,
   updateRoundInfo,
 } from "./hud";
-import { isCrouching, isMoving, look, sendInput, setupInput, touch } from "./input";
+import { buildInput, isCrouching, isMoving, look, sendInput, setupInput, touch } from "./input";
+import { Interpolator } from "./interp";
+import { Predictor } from "./predict";
 import { net } from "./net";
 import { createRenderer, IS_MOBILE, type Renderer } from "./render/renderer";
+import { preloadWeaponModels } from "./render/models/gltf";
 import { renderShop, shopDigit, toggleShop } from "./shop";
-import { decayRecoil, state } from "./state";
+import { decayRecoil, registerShot, state } from "./state";
 import { setupTouch } from "./touch";
 import type { PlayerState, ServerMsg, ServerSnapshot, WeaponSlot } from "../shared/protocol";
 import { WEAPONS } from "../shared/weapons";
 
 const $ = (id: string) => document.getElementById(id)!;
 const renderer: Renderer = createRenderer();
+const predictor = new Predictor();
+const interp = new Interpolator();
 
 // ===== Ações compartilhadas entre teclado e touch =====
 
@@ -43,6 +48,19 @@ function onReload() {
   net.send({ t: "reload" });
 }
 
+/** Tiro previsto: feedback imediato no clique; o tracer do servidor confirma (e não repete) em seguida. */
+function onFire() {
+  const me = state.me;
+  const w = WEAPONS[state.weapon];
+  if (!me?.alive || !w || w.slot === 3 || state.team === "zombie" || me.reloading || state.ammo <= 0) return;
+  if (performance.now() - state.predictedShotAt < 1000 / w.fireRate) return;
+  state.predictedShotAt = performance.now();
+  renderer.viewmodelFire();
+  registerShot();
+  renderer.punch(-w.recoil * 0.012, (Math.random() - 0.5) * w.recoil * 0.006);
+  audio.shoot(w.sound, 1);
+}
+
 function closeMenus() {
   if (state.ui.chatOpen) setChat(false);
   if (state.ui.shopOpen) toggleShop(false);
@@ -51,7 +69,14 @@ function closeMenus() {
 
 // ===== Entrada no jogo =====
 
-function joinGame() {
+let joining = false;
+async function joinGame() {
+  if (joining) return;
+  joining = true;
+  const btn = $("join-btn") as HTMLButtonElement;
+  btn.disabled = true;
+  btn.textContent = "CARREGANDO ARMAS…";
+  await modelsReady; // nunca rejeita: arma sem GLB cai no modelo procedural
   const name = ($("name-input") as HTMLInputElement).value.trim() || "Jogador";
   localStorage.setItem("a-plaga-name", name);
   audio.init();
@@ -70,6 +95,7 @@ function joinGame() {
     onShopDigit: shopDigit,
     onSwitch,
     onReload,
+    onFire,
   });
   if (IS_MOBILE) setupTouch({ toggleShop: () => toggleShop(), toggleScore: () => toggleScore(), onSwitch, onReload });
 }
@@ -83,14 +109,23 @@ let lastReloading = false;
 net.connect(
   (msg: ServerMsg) => {
     switch (msg.t) {
-      case "welcome":
+      case "welcome": {
         state.id = msg.d.id;
         state.snapshot = msg.d.snapshot;
         renderer.localId = msg.d.id;
+        // Olhar começa na direção do spawn — antes o input a 20 Hz mandava yaw 0 e o servidor virava o jogador para a parede
+        const self = msg.d.snapshot.players.find((p) => p.id === msg.d.id);
+        if (self) {
+          look.yaw = self.yaw;
+          look.pitch = self.pitch;
+          look.initialized = true;
+        }
         audio.roundStart();
         break;
+      }
       case "snapshot":
         state.snapshot = msg.d;
+        interp.push(msg.d);
         applySnapshot(msg.d);
         break;
       case "self":
@@ -170,6 +205,7 @@ function applySnapshot(snap: ServerSnapshot) {
       }
       const prevTeam = state.team;
       state.me = p;
+      predictor.reconcile(p);
       state.team = p.team;
       state.hp = p.hp;
       state.armor = p.armor;
@@ -227,22 +263,79 @@ function ambientSounds(snap: ServerSnapshot) {
   }
 }
 
-// ===== Loop de render =====
+// ===== Loop de render (vsync via setAnimationLoop) =====
 
 let lastFrame = performance.now();
+const camPos = new THREE.Vector3();
+let fpsFrames = 0;
+let fpsLast = performance.now();
+let fpsEl: HTMLElement | null = null;
+declare global {
+  interface Window {
+    __fps: number;
+    __camSamples: number[];
+  }
+}
+window.__fps = 0;
+window.__camSamples = [];
+
+function toggleFps() {
+  if (fpsEl) {
+    fpsEl.remove();
+    fpsEl = null;
+    return;
+  }
+  fpsEl = document.createElement("div");
+  fpsEl.id = "fps";
+  fpsEl.style.cssText = "position:fixed;top:4px;left:50%;transform:translateX(-50%);font:12px monospace;color:#9f9;background:rgba(0,0,0,.5);padding:2px 6px;z-index:60;pointer-events:none";
+  document.body.appendChild(fpsEl);
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "F3") {
+    e.preventDefault();
+    toggleFps();
+  }
+});
+
 function frame() {
   const nowMs = performance.now();
   const dt = Math.min(0.1, (nowMs - lastFrame) / 1000);
   lastFrame = nowMs;
+  fpsFrames++;
+  if (nowMs - fpsLast >= 1000) {
+    window.__fps = fpsFrames;
+    if (fpsEl) fpsEl.textContent = `${fpsFrames} fps`;
+    fpsFrames = 0;
+    fpsLast = nowMs;
+  }
+
   decayRecoil(dt);
   const me = state.me;
   const crouching = isCrouching();
   const moving = isMoving();
-  const speed = me?.speed ?? 0;
-  const airborne = !!me && me.pos.y > 0.15;
+
+  // Outros jogadores: pose interpolada entre dois snapshots (~100 ms atrás)
+  const poses = interp.update(dt);
+  for (const [id, pose] of poses) {
+    if (id !== state.id) renderer.setPlayerPose(id, pose.pos.x, pose.pos.y, pose.pos.z, pose.yaw, pose.pitch);
+  }
+
+  // Jogador local: predição a cada frame com a entrada atual
+  let speed = me?.speed ?? 0;
+  let airborne = !!me && me.pos.y > 0.15;
   if (me) {
+    let px = me.pos.x, py = me.pos.y, pz = me.pos.z;
+    if (me.alive) {
+      const input = buildInput();
+      predictor.step(input, look.yaw, dt);
+      px = predictor.pos.x; py = predictor.pos.y; pz = predictor.pos.z;
+      speed = predictor.speed;
+      airborne = predictor.airborne;
+    }
     const eye = (crouching ? 1.0 : 1.6) * me.scale;
-    renderer.setLocalCamera(new THREE.Vector3(me.pos.x, me.pos.y + eye, me.pos.z), look.yaw, look.pitch);
+    camPos.set(px, py + eye, pz);
+    renderer.setLocalCamera(camPos, look.yaw, look.pitch);
+    if (window.__camSamples.length < 400) window.__camSamples.push(px, pz);
     if (me.alive && speed > 1 && !airborne) audio.footstep(speed, me.team === "zombie", 0.8);
   }
   updateCrosshair(moving || speed > 1, airborne, crouching);
@@ -254,10 +347,12 @@ function frame() {
     speed,
   });
   if (me && !me.alive) updateHUD(); // contador de respawn
-  requestAnimationFrame(frame);
 }
 
 // ===== Boot =====
+
+// Baixa os GLB das armas enquanto o jogador digita o nome
+const modelsReady = preloadWeaponModels();
 
 $("join-btn").addEventListener("click", joinGame);
 $("name-input").addEventListener("keydown", (e) => {
@@ -273,4 +368,4 @@ if (saved) ($("name-input") as HTMLInputElement).value = saved;
 
 // Input a 20Hz além dos envios por evento
 setInterval(sendInput, 50);
-requestAnimationFrame(frame);
+renderer.setAnimationLoop(frame);

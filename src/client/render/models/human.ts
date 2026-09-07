@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { camoTexture, kevlarTexture, tex } from "../textures";
 import { makeWeaponModel } from "./weapons";
+import { getWeaponModel } from "./gltf";
 
 /** Peças animáveis de um boneco (humano ou zumbi). */
 export interface BuiltModel {
@@ -91,8 +92,12 @@ export function makeHumanModel(color: number, classId: string, weaponId: string)
 
   // Arma na mão direita, apontando para -z quando o braço está levantado
   const gun = makeWeaponModel(weaponId);
-  gun.scale.setScalar(0.72);
-  gun.position.set(0, -0.6, -0.14);
+  // GLB tem escala real e origem na empunhadura; o procedural é centrado no receiver
+  const real = getWeaponModel(weaponId) != null;
+  gun.scale.setScalar(real ? 0.9 : 0.72);
+  // O braço aponta para -y local; gira a arma para o cano seguir o braço, com a mira para cima
+  gun.rotation.set(-Math.PI / 2, 0, Math.PI);
+  gun.position.set(0, real ? -0.5 : -0.58, real ? 0.0 : -0.02);
   gun.traverse((o) => {
     if (o instanceof THREE.Mesh) fadeable.push(o.material as THREE.Material);
   });

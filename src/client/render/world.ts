@@ -29,12 +29,22 @@ function boxGeo(minX: number, minY: number, minZ: number, maxX: number, maxY: nu
   return g;
 }
 
+/** Mescla em blocos por quadrante do mapa: um mesh gigante nunca sai do frustum, quatro saem. */
 function addMerged(scene: THREE.Scene, geos: THREE.BufferGeometry[], mat: THREE.Material, shadows: boolean) {
   if (geos.length === 0) return;
-  const mesh = new THREE.Mesh(mergeGeometries(geos), mat);
-  mesh.castShadow = shadows;
-  mesh.receiveShadow = true;
-  scene.add(mesh);
+  const chunks: THREE.BufferGeometry[][] = [[], [], [], []];
+  for (const g of geos) {
+    g.computeBoundingBox();
+    const c = g.boundingBox!.getCenter(new THREE.Vector3());
+    chunks[(c.x >= 0 ? 1 : 0) + (c.z >= 0 ? 2 : 0)].push(g);
+  }
+  for (const chunk of chunks) {
+    if (chunk.length === 0) continue;
+    const mesh = new THREE.Mesh(mergeGeometries(chunk), mat);
+    mesh.castShadow = shadows;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+  }
 }
 
 export function buildWorld(scene: THREE.Scene): World {
@@ -49,7 +59,7 @@ export function buildWorld(scene: THREE.Scene): World {
   sun.position.set(50, 70, 20);
   sun.castShadow = shadows;
   if (shadows) {
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(1024, 1024);
     sun.shadow.camera.left = -95;
     sun.shadow.camera.right = 95;
     sun.shadow.camera.top = 95;

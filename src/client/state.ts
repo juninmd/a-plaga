@@ -24,6 +24,8 @@ export interface LocalState {
   diedAt: number;
   /** Última morte: quem matou e com quê. */
   deathInfo: { killer: string; weapon: string; headshot: boolean } | null;
+  /** Instante (ms) do último tiro previsto no clique — o tracer do servidor logo depois não repete o feedback. */
+  predictedShotAt: number;
   ui: {
     chatOpen: boolean;
     shopOpen: boolean;
@@ -52,6 +54,7 @@ export const state: LocalState = {
   recoilAccum: 0,
   diedAt: 0,
   deathInfo: null,
+  predictedShotAt: -1e9,
   ui: {
     chatOpen: false,
     shopOpen: false,

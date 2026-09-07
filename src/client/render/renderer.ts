@@ -47,7 +47,8 @@ export class Renderer {
   constructor() {
     this.renderer = new THREE.WebGLRenderer({ antialias: !IS_MOBILE, powerPreference: "high-performance" });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(IS_MOBILE ? 1.5 : 2, window.devicePixelRatio));
+    // Pixel ratio alto é o maior custo de fill-rate em telas 4K/retina — 1.5 já fica nítido
+    this.renderer.setPixelRatio(Math.min(IS_MOBILE ? 1.25 : 1.5, window.devicePixelRatio));
     this.renderer.shadowMap.enabled = !IS_MOBILE;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -87,6 +88,13 @@ export class Renderer {
   }
   meleeSwing(id: number) {
     this.playersReg.meleeSwing(id);
+  }
+  setPlayerPose(id: number, x: number, y: number, z: number, yaw: number, pitch: number) {
+    this.playersReg.setPose(id, x, y, z, yaw, pitch);
+  }
+  /** Loop de render sincronizado ao vsync do navegador. */
+  setAnimationLoop(cb: () => void) {
+    this.renderer.setAnimationLoop(cb);
   }
 
   // ===== Viewmodel =====

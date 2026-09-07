@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { cloneWeapon, getWeaponModel } from "./gltf";
 
 // ===== Modelos low-poly de armas (usados no viewmodel e nas mãos dos outros jogadores) =====
 // Convenção: o cano aponta para -z, a empunhadura fica em y negativo.
@@ -49,7 +50,36 @@ export const WEAPON_META: Record<string, { muzzleZ: number; muzzleY: number; she
   claws: { muzzleZ: 0, muzzleY: 0, shells: false },
 };
 
+export interface WeaponMeta {
+  muzzleZ: number;
+  muzzleY: number;
+  shells: boolean;
+  /** Comprimento do modelo (m), para posicionar mãos/offsets. */
+  length: number;
+}
+
+/** Metadados da arma em uso: derivados do GLB quando carregado, senão da tabela procedural. */
+export function weaponMeta(weaponId: string): WeaponMeta {
+  const base = WEAPON_META[weaponId] ?? WEAPON_META.knife;
+  const loaded = getWeaponModel(weaponId);
+  if (!loaded) return { ...base, length: Math.abs(base.muzzleZ) + 0.4 };
+  return { muzzleZ: loaded.muzzle.z, muzzleY: loaded.muzzle.y, shells: base.shells, length: loaded.box.max.z - loaded.box.min.z };
+}
+
+/** Modelo da arma: GLB (Quaternius) quando já carregado, senão o procedural. */
 export function makeWeaponModel(weaponId: string): THREE.Group {
+  const glb = cloneWeapon(weaponId);
+  if (glb) {
+    // Materiais próprios por instância: o fade do Fantasma não pode apagar a arma de todo mundo
+    glb.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.material = (o.material as THREE.Material).clone();
+    });
+    return glb;
+  }
+  return makeProceduralWeaponModel(weaponId);
+}
+
+export function makeProceduralWeaponModel(weaponId: string): THREE.Group {
   const g = new THREE.Group();
   switch (weaponId) {
     case "ak47":

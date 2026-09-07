@@ -73,3 +73,12 @@ npm run typecheck    # typecheck client + server
 Imagem `ghcr.io/juninmd/a-plaga:latest` via GitHub Actions; manifests no repo
 `juninmd/app-charts` (pasta `a-plaga/`), ingress Traefik + wildcard TLS
 (`*.antonio-code.duckdns.org`).
+
+## Créditos
+
+- Modelos 3D das armas: **Ultimate Guns Pack** de [Quaternius](https://quaternius.com/packs/ultimategun.html)
+  (arquivos OBJ convertidos para GLB em `public/models/weapons/`). A página do pack aponta para
+  [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) e o site distribui os packs sob a
+  [Quaternius Asset License](https://quaternius.com/license.html): uso livre em projetos pessoais e
+  comerciais, sem obrigação de crédito, sem redistribuir os modelos como produto avulso.
+- Texturas, mapa, personagens, sons e demais assets são procedurais (gerados em código).

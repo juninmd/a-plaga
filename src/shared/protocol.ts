@@ -46,6 +46,8 @@ export interface PlayerState {
   crouching: boolean;
   /** Velocidade horizontal (m/s) — o cliente usa para passos e animação. */
   speed: number;
+  /** Velocidade completa — a predição local reconcilia com ela. */
+  vel: Vec3;
   /** Armas nos slots 1/2/3 (só é preenchido para o próprio jogador). */
   slots?: (string | null)[];
 }

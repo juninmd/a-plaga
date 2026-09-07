@@ -1,12 +1,27 @@
 import * as THREE from "three";
 import type { Team } from "../../shared/protocol";
-import { WEAPON_META, makeWeaponModel } from "./models/weapons";
+import { makeWeaponModel, weaponMeta } from "./models/weapons";
+import { getWeaponModel } from "./models/gltf";
 import { disposeTree } from "./dispose";
 import { IS_MOBILE, smokeTexture, tex } from "./textures";
 
 // ===== Arma em primeira pessoa: braços + arma presos na câmera =====
 
 const BASE = { x: 0.16, y: -0.17, z: -0.5 };
+/** Ajuste fino por arma quando o GLB está carregado (posição do holder e escala). */
+const VM_OFFSET: Record<string, { x: number; y: number; z: number; s: number; ry: number }> = {
+  ak47: { x: 0.17, y: -0.2, z: -0.34, s: 0.42, ry: 0.02 },
+  m4a1: { x: 0.17, y: -0.2, z: -0.34, s: 0.42, ry: 0.02 },
+  awp: { x: 0.17, y: -0.2, z: -0.32, s: 0.4, ry: 0.0 },
+  mp5: { x: 0.17, y: -0.2, z: -0.34, s: 0.46, ry: 0.03 },
+  xm1014: { x: 0.17, y: -0.2, z: -0.34, s: 0.42, ry: 0.02 },
+  m3: { x: 0.17, y: -0.2, z: -0.34, s: 0.42, ry: 0.02 },
+  m249: { x: 0.17, y: -0.21, z: -0.34, s: 0.42, ry: 0.02 },
+  deagle: { x: 0.15, y: -0.18, z: -0.32, s: 0.5, ry: 0.02 },
+  usp: { x: 0.15, y: -0.18, z: -0.32, s: 0.5, ry: 0.02 },
+  glock: { x: 0.15, y: -0.18, z: -0.32, s: 0.5, ry: 0.02 },
+  knife: { x: 0.16, y: -0.17, z: -0.3, s: 0.6, ry: 0.25 },
+};
 
 export class Viewmodel {
   private holder: THREE.Group | null = null;
@@ -24,6 +39,7 @@ export class Viewmodel {
   private shells: { mesh: THREE.Mesh; vel: THREE.Vector3; spin: number; until: number }[] = [];
   private shellMat = new THREE.MeshStandardMaterial({ color: 0xc9a04a, metalness: 0.8, roughness: 0.35 });
   private shellGeo = new THREE.CylinderGeometry(0.006, 0.006, 0.022, 5);
+  private base = { ...BASE };
   hidden = false;
 
   constructor(private camera: THREE.PerspectiveCamera, private scene: THREE.Scene) {}
@@ -74,13 +90,37 @@ export class Viewmodel {
         return h;
       };
       const pistol = id === "deagle" || id === "usp" || id === "glock";
-      holder.add(mkHand(0.02, -0.14, 0.18), mkHand(-0.05, -0.1, pistol ? 0.06 : id === "knife" ? 0.15 : -0.26, 0.3));
-      holder.scale.setScalar(0.5);
-      holder.position.set(BASE.x, BASE.y, BASE.z);
-      holder.rotation.set(0.03, 0.06, 0);
+      const loaded = getWeaponModel(id);
+      const off = loaded ? VM_OFFSET[id] : undefined;
+      if (loaded) {
+        // GLB: origem na empunhadura; mão de apoio no handguard (um terço do cano à frente)
+        const len = loaded.box.max.z - loaded.box.min.z;
+        // Mãos do GLB: punho na empunhadura com o antebraço descendo para a direita (fora da tela),
+        // mão de apoio sob o handguard com o antebraço descendo para a esquerda
+        const mkArm = (x: number, y: number, z: number, yaw: number, pitch: number) => {
+          const arm = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.075, 0.3), sleeve);
+          arm.position.set(x, y, z);
+          arm.rotation.set(pitch, yaw, 0);
+          return arm;
+        };
+        const fist = (x: number, y: number, z: number) => {
+          const f = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.085, 0.09), skin);
+          f.position.set(x, y, z);
+          return f;
+        };
+        holder.add(fist(0.0, -0.05, 0.03), mkArm(0.06, -0.14, 0.16, -0.35, 0.45));
+        if (!pistol && id !== "knife") holder.add(fist(-0.01, -0.035, -len * 0.42), mkArm(-0.07, -0.13, -len * 0.42 + 0.14, 0.4, 0.5));
+        else if (pistol) holder.add(fist(-0.045, -0.06, 0.0), mkArm(-0.09, -0.16, 0.12, 0.35, 0.5));
+      } else {
+        holder.add(mkHand(0.02, -0.14, 0.18), mkHand(-0.05, -0.1, pistol ? 0.06 : id === "knife" ? 0.15 : -0.26, 0.3));
+      }
+      holder.scale.setScalar(off?.s ?? 0.5);
+      this.base = off ? { x: off.x, y: off.y, z: off.z } : { ...BASE };
+      holder.position.set(this.base.x, this.base.y, this.base.z);
+      holder.rotation.set(0.03, off?.ry ?? 0.06, 0);
 
       if (id !== "knife") {
-        const meta = WEAPON_META[id];
+        const meta = weaponMeta(id);
         const flashGeo = new THREE.ConeGeometry(0.09, 0.3, 6);
         flashGeo.rotateX(-Math.PI / 2);
         const flash = new THREE.Mesh(
@@ -122,7 +162,7 @@ export class Viewmodel {
       this.muzzleGlow.scale.setScalar(0.4 + Math.random() * 0.3);
     }
     if (this.muzzleLight) this.muzzleLight.intensity = 8;
-    if (!IS_MOBILE && WEAPON_META[this.weaponId]?.shells) this.ejectShell();
+    if (!IS_MOBILE && weaponMeta(this.weaponId).shells) this.ejectShell();
   }
 
   startReload() {
@@ -171,9 +211,9 @@ export class Viewmodel {
 
     const bobAmp = moving ? 0.018 + speed * 0.001 : 0.004;
     const melee = this.isMelee;
-    const baseX = this.weaponId === "claws" ? 0 : BASE.x;
-    const baseY = this.weaponId === "claws" ? 0 : BASE.y;
-    const baseZ = this.weaponId === "claws" ? 0 : BASE.z;
+    const baseX = this.weaponId === "claws" ? 0 : this.base.x;
+    const baseY = this.weaponId === "claws" ? 0 : this.base.y;
+    const baseZ = this.weaponId === "claws" ? 0 : this.base.z;
     const reloadDip = Math.sin(this.reloadAnim * Math.PI) * 0.22 + this.reload * 0.08;
     const raiseDip = this.raise * this.raise * 0.35;
     vm.position.set(
@@ -181,9 +221,10 @@ export class Viewmodel {
       baseY + Math.abs(Math.cos(this.bob)) * bobAmp * 0.8 - reloadDip - raiseDip,
       baseZ + (melee ? -this.recoil * 0.3 : this.recoil * 0.07),
     );
+    const baseRy = melee ? (this.weaponId === "knife" ? (VM_OFFSET.knife.ry) : 0) : (VM_OFFSET[this.weaponId] && getWeaponModel(this.weaponId) ? VM_OFFSET[this.weaponId].ry : 0.06);
     vm.rotation.set(
       (melee ? 0 : 0.03) + this.recoil * (melee ? -0.35 : 0.22) + Math.sin(this.reloadAnim * Math.PI) * 0.7 + raiseDip * 1.5,
-      (melee ? 0 : 0.06) + Math.sin(this.reloadAnim * Math.PI) * 0.45,
+      baseRy + Math.sin(this.reloadAnim * Math.PI) * 0.45,
       this.recoil * 0.05 + Math.sin(this.reloadAnim * Math.PI) * 0.3,
     );
 

@@ -8,6 +8,21 @@ import { WEAPONS } from "../shared/weapons";
 
 const $ = (id: string) => document.getElementById(id)!;
 
+// Escrever no DOM a 20 Hz força layout mesmo sem mudança — só escreve quando o valor muda
+const textCache = new Map<string, string>();
+function setText(id: string, value: string) {
+  if (textCache.get(id) === value) return;
+  textCache.set(id, value);
+  $(id).textContent = value;
+}
+function setClass(id: string, cls: string, on: boolean) {
+  const key = `${id}.${cls}`;
+  const v = on ? "1" : "0";
+  if (textCache.get(key) === v) return;
+  textCache.set(key, v);
+  $(id).classList.toggle(cls, on);
+}
+
 export function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -18,39 +33,47 @@ let lastWeaponShown = "";
 export function updateHUD() {
   const me = state.me;
   if (!me) return;
-  $("hp-text").textContent = String(Math.max(0, Math.round(state.hp)));
-  $("hp-box").classList.toggle("low", state.hp / me.maxHp < 0.3);
-  $("armor-text").textContent = String(Math.round(state.armor));
-  $("armor-box").classList.toggle("dim", state.armor <= 0);
-  $("ap-text").textContent = `$ ${state.ap}`;
+  setText("hp-text", String(Math.max(0, Math.round(state.hp))));
+  setClass("hp-box", "low", state.hp / me.maxHp < 0.3);
+  setText("armor-text", String(Math.round(state.armor)));
+  setClass("armor-box", "dim", state.armor <= 0);
+  setText("ap-text", `$ ${state.ap}`);
 
   const w = WEAPONS[state.weapon];
   const melee = !w || w.slot === 3;
-  $("weapon-name").textContent = state.team === "zombie" ? "GARRAS" : (w?.name ?? state.weapon).toUpperCase();
-  $("ammo-cur").textContent = melee ? "—" : me.reloading ? "···" : String(state.ammo);
-  $("ammo-res").textContent = melee ? "" : String(state.reserve);
-  $("ammo-box").classList.toggle("empty", !melee && state.ammo === 0 && !me.reloading);
-  $("ammo-box").classList.toggle("reloading", me.reloading);
-  for (const el of Array.from(document.querySelectorAll<HTMLElement>("#slots .slot"))) {
-    const slot = Number(el.dataset.slot);
-    const id = state.slots[slot - 1];
-    el.classList.toggle("has", !!id);
-    el.classList.toggle("active", !!id && id === state.weapon);
-    el.title = id ? weaponName(id) : "";
+  setText("weapon-name", state.team === "zombie" ? "GARRAS" : (w?.name ?? state.weapon).toUpperCase());
+  setText("ammo-cur", melee ? "—" : me.reloading ? "···" : String(state.ammo));
+  setText("ammo-res", melee ? "" : String(state.reserve));
+  setClass("ammo-box", "empty", !melee && state.ammo === 0 && !me.reloading);
+  setClass("ammo-box", "reloading", me.reloading);
+  const slotsKey = `${state.slots.join(",")}|${state.weapon}`;
+  if (textCache.get("slots-key") !== slotsKey) {
+    textCache.set("slots-key", slotsKey);
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>("#slots .slot"))) {
+      const slot = Number(el.dataset.slot);
+      const id = state.slots[slot - 1];
+      el.classList.toggle("has", !!id);
+      el.classList.toggle("active", !!id && id === state.weapon);
+      el.title = id ? weaponName(id) : "";
+    }
   }
-  $("slots").classList.toggle("hidden", state.team === "zombie");
+  setClass("slots", "hidden", state.team === "zombie");
   if (lastWeaponShown !== state.weapon) lastWeaponShown = state.weapon;
 
   const abilityKey = "E";
-  $("ability-info").textContent = state.abilityReady ? `${abilityKey} · habilidade pronta` : `${abilityKey} · recarregando`;
-  $("ability-info").classList.toggle("ready", state.abilityReady);
+  setText("ability-info", state.abilityReady ? `${abilityKey} · habilidade pronta` : `${abilityKey} · recarregando`);
+  setClass("ability-info", "ready", state.abilityReady);
 
-  // Vinheta vermelha quando HP baixo
+  // Vinheta vermelha quando HP baixo (quantizada para não reescrever o estilo a cada tick)
   const hpPct = state.hp / me.maxHp;
-  $("vignette").style.boxShadow =
+  const vig =
     hpPct < 0.35
-      ? `inset 0 0 ${(1 - hpPct / 0.35) * 180 + 80}px rgba(198,40,40,${(0.35 - hpPct) * 1.5})`
+      ? `inset 0 0 ${Math.round((1 - hpPct / 0.35) * 180 + 80)}px rgba(198,40,40,${((0.35 - hpPct) * 1.5).toFixed(2)})`
       : "inset 0 0 160px rgba(0,0,0,0.75)";
+  if (textCache.get("vignette") !== vig) {
+    textCache.set("vignette", vig);
+    $("vignette").style.boxShadow = vig;
+  }
 
   updateDeadOverlay(me.alive);
   updateSpawnHint();
@@ -63,10 +86,13 @@ export function updateCrosshair(moving: boolean, airborne: boolean, crouching: b
   // rad → px: distância focal aproximada da câmera em pixels
   const focal = window.innerHeight / (2 * Math.tan((75 / 2) * (Math.PI / 180)));
   const gap = Math.min(80, 3 + spread * focal * 2.2);
-  const ch = $("crosshair");
-  ch.style.setProperty("--gap", `${gap}px`);
-  ch.classList.toggle("hidden", state.ui.zooming || !state.me?.alive);
-  $("scope").classList.toggle("hidden", !state.ui.zooming || !state.me?.alive);
+  const gapText = `${gap.toFixed(1)}px`;
+  if (textCache.get("crosshair-gap") !== gapText) {
+    textCache.set("crosshair-gap", gapText);
+    $("crosshair").style.setProperty("--gap", gapText);
+  }
+  setClass("crosshair", "hidden", state.ui.zooming || !state.me?.alive);
+  setClass("scope", "hidden", !state.ui.zooming || !state.me?.alive);
 }
 
 let hitTimer = 0;
