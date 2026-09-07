@@ -8,10 +8,28 @@ Jogo 3D multiplayer no navegador inspirado no **Zombie Plague 5.0** do
 ## Como jogar
 
 Abra o link, digite seu nome e entre. O servidor roda 20 ticks/s com
-autoridade total; bots preenchem até 8 jogadores para a arena nunca ficar vazia.
+autoridade total; bots (com pathfinding A* no mapa) preenchem até 8 jogadores.
 
-- **WASD** mover · **Mouse** mirar · **Clique** atirar · **R** habilidade
-- **B** loja (classes + itens extras com AP) · **Tab** placar · **Enter** chat
+- **WASD** mover · **Mouse** mirar · **Clique** atirar · **Botão direito** zoom (AWP)
+- **Ctrl/C** agachar · **Espaço** pular · **R** recarregar · **E** habilidade
+- **1/2/3** ou roda do mouse trocar arma · **B** menu de compra · **Tab** placar · **Enter** chat
+- Celular: analógico esquerdo move, arrastar na direita mira, botões de tiro/pulo/agachar/recarga/habilidade/troca
+
+### Jogar no celular (rede local)
+
+```powershell
+npm run play      # build + servidor; imprime http://<IP-do-PC>:8080
+```
+
+Abra o endereço impresso no navegador do celular (mesma rede Wi‑Fi, tela em
+paisagem). O `node.exe` precisa estar liberado no firewall do Windows para
+conexões de entrada.
+
+## Arsenal (CS 1.6)
+
+Armas são grátis no menu **B** (compra só no spawn, como no CS): AK-47, M4A1,
+AWP (com zoom), MP5, XM1014, M3, M249 · Deagle, USP, Glock · faca. Precisão cai
+andando/pulando e melhora agachado; recuo acumula por rajada.
 
 ## Mecânicas herdadas dos addons
 

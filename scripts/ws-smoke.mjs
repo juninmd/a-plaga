@@ -18,7 +18,7 @@ ws.on("message", (raw) => {
     console.log("WELCOME id=", id);
     // Envia input continuamente: andar para frente + atirar
     setInterval(() => {
-      ws.send(JSON.stringify({ t: "input", d: { moveX: 0, moveY: 1, jump: false, attack: true, ability: false, yaw: 0, pitch: 0, zoom: false } }));
+      ws.send(JSON.stringify({ t: "input", d: { moveX: 0, moveY: 1, jump: false, crouch: false, attack: true, ability: false, yaw: 0, pitch: 0, zoom: false } }));
     }, 50);
     setTimeout(() => ws.send(JSON.stringify({ t: "buy", d: { itemId: "adrenaline" } })), 1000);
     setTimeout(() => ws.send(JSON.stringify({ t: "chat", d: { text: "olá praga" } })), 2000);

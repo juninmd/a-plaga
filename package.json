@@ -9,7 +9,9 @@
     "build": "tsc -p tsconfig.server.json && vite build",
     "start": "node dist-server/server/index.js",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "start:lan": "node scripts/lan.mjs",
+    "play": "npm run build && node scripts/lan.mjs"
   },
   "dependencies": {
     "three": "^0.170.0",

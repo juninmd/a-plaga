@@ -14,6 +14,9 @@ export interface Vec3 {
   z: number;
 }
 
+/** Slot de arma no estilo CS: 1 primária, 2 secundária, 3 faca/garra. */
+export type WeaponSlot = 1 | 2 | 3;
+
 export interface PlayerState {
   id: number;
   name: string;
@@ -38,6 +41,13 @@ export interface PlayerState {
   deaths: number;
   streak: number;
   armor: number;
+  invisible: boolean;
+  reloading: boolean;
+  crouching: boolean;
+  /** Velocidade horizontal (m/s) — o cliente usa para passos e animação. */
+  speed: number;
+  /** Armas nos slots 1/2/3 (só é preenchido para o próprio jogador). */
+  slots?: (string | null)[];
 }
 
 export interface RoundInfo {
@@ -48,6 +58,7 @@ export interface RoundInfo {
   humans: number;
   firstZombie: string;
   modeLabel: string;
+  number: number;
 }
 
 export interface PickupState {
@@ -65,11 +76,34 @@ export interface ProjectileState {
   owner: number;
 }
 
+export type FxKind =
+  | "tracer"
+  | "impact"
+  | "blood"
+  | "damage"
+  | "melee"
+  | "explosion"
+  | "infect"
+  | "heal"
+  | "frost"
+  | "acid"
+  | "speed"
+  | "leap"
+  | "invisible"
+  | "pickup"
+  | "tongue"
+  | "death";
+
 export interface FxEvent {
-  kind: string;
+  kind: FxKind;
   pos: Vec3;
   color: number;
   value?: number;
+  from?: Vec3; // origem (tracers saem da arma de quem atirou, não da câmera local)
+  normal?: Vec3; // normal da superfície (impactos de bala)
+  src?: number; // id de quem causou
+  dst?: number; // id de quem recebeu
+  weapon?: string;
 }
 
 export interface KillFeedEntry {
@@ -103,6 +137,7 @@ export interface InputState {
   moveX: number;
   moveY: number;
   jump: boolean;
+  crouch: boolean;
   attack: boolean;
   yaw: number;
   pitch: number;
@@ -126,6 +161,9 @@ export type ClientMsg =
   | { t: "join"; d: JoinPayload }
   | { t: "input"; d: InputState }
   | { t: "buy"; d: BuyPayload }
+  | { t: "buyWeapon"; d: { weaponId: string } }
+  | { t: "switch"; d: { slot: WeaponSlot } }
+  | { t: "reload" }
   | { t: "selectClass"; d: SelectClassPayload }
   | { t: "chat"; d: { text: string } };
 
@@ -144,4 +182,4 @@ export type ServerMsg =
   | { t: "tick"; d: { hp: number; armor: number; ap: number; ammo: number; reserve: number } }
   | { t: "error"; d: string };
 
-export const PROTOCOL = "a-plaga-v1";
+export const PROTOCOL = "a-plaga-v2";

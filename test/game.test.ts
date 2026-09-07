@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Game } from "../src/server/game";
 import { setTime } from "../src/server/physics";
+import { damage, infect, killEntity } from "../src/server/combat";
 
 function makeGame(): Game {
   const g = new Game();
@@ -80,9 +81,9 @@ describe("Game — modos", () => {
     g.round.mode = "nemesis";
     // força um zumbi nemesis
     const h = g.players.find((p) => p.team === "human")!;
-    g["infect"](h, null, false);
+    infect(g, h, null, false);
     const z = g.players.find((p) => p.team === "zombie")!;
-    g["applyClass"](z, "nemesis");
+    g.applyClass(z, "nemesis");
     z.isBoss = true;
     expect(z.maxHp).toBeGreaterThan(10000);
     expect(z.isBoss).toBe(true);
@@ -110,7 +111,7 @@ describe("Game — modos", () => {
     zombie.alive = true;
     zombie.spawnProtectUntil = 0;
     zombie.pos = { x: human.pos.x + 1, y: 0, z: human.pos.z };
-    g["damage"](zombie, human, 99999, false, 5);
+    damage(g, zombie, human, 99999, false, 5);
     expect(zombie.alive).toBe(false);
     expect(g.pickups.length).toBeGreaterThan(0);
     // Respawn com delay de 5s
@@ -129,7 +130,7 @@ describe("Game — modos", () => {
     human.team = "human";
     human.alive = true;
     human.spawnProtectUntil = 0;
-    g["killEntity"](human, z, false);
+    killEntity(g, human, z, false);
     expect(human.team).toBe("zombie");
     expect(human.alive).toBe(false);
     expect(human.respawnAt).toBeGreaterThan(100);

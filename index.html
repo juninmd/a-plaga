@@ -2,53 +2,104 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0f0d" />
     <title>A PRAGA — Zombie Plague 3D</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ctext y=%2714%27 font-size=%2714%27%3E%F0%9F%A7%9F%3C/text%3E%3C/svg%3E" />
     <link rel="stylesheet" href="/src/client/style.css" />
   </head>
   <body>
     <div id="app"></div>
+
     <div id="hud" class="hidden">
-      <div id="crosshair"></div>
+      <!-- Mira dinâmica estilo CS -->
+      <div id="crosshair"><i class="ch t"></i><i class="ch b"></i><i class="ch l"></i><i class="ch r"></i><i class="ch dot"></i></div>
+      <div id="hitmarker"></div>
+      <div id="dmg-dir"></div>
+      <div id="scope" class="hidden"><div class="scope-ring"></div><div class="scope-h"></div><div class="scope-v"></div></div>
+
+      <!-- Topo -->
+      <div id="hud-top-left"><div id="ap-text">$ 0</div><div id="net-status" class="hidden">reconectando…</div></div>
+      <div id="round-info"><span id="round-time">00:00</span><span id="round-mode">—</span><span id="round-teams"></span></div>
+      <div id="killfeed"></div>
+
+      <!-- Centro -->
+      <div id="hud-center"></div>
+      <div id="streak-banner" class="hidden"></div>
+      <div id="spawn-hint" class="hidden">B — comprar armas · 1/2/3 trocar</div>
+
+      <!-- Base -->
       <div id="hud-left">
-        <div id="hp-bar"><div id="hp-fill"></div><span id="hp-text"></span></div>
-        <div id="armor-bar"><div id="armor-fill"></div></div>
-        <div id="ap-text"></div>
+        <div id="chat-box">
+          <div id="chat-log"></div>
+          <input id="chat-input" type="text" maxlength="140" placeholder="Enter para falar…" autocomplete="off" />
+        </div>
+        <div id="vitals">
+          <div class="vital" id="hp-box"><span class="icon">✚</span><span id="hp-text">100</span></div>
+          <div class="vital" id="armor-box"><span class="icon">⛨</span><span id="armor-text">0</span></div>
+        </div>
       </div>
       <div id="hud-right">
-        <div id="round-info"></div>
-        <div id="weapon-info"></div>
         <div id="ability-info"></div>
+        <div id="weapon-name"></div>
+        <div id="ammo-box"><span id="ammo-cur">0</span><span class="ammo-sep">|</span><span id="ammo-res">0</span></div>
+        <div id="slots"><span class="slot" data-slot="1">1</span><span class="slot" data-slot="2">2</span><span class="slot" data-slot="3">3</span></div>
       </div>
-      <div id="hud-center"></div>
-      <div id="killfeed"></div>
-      <div id="chat-box">
-        <div id="chat-log"></div>
-        <input id="chat-input" type="text" maxlength="140" placeholder="Enter para falar..." />
-      </div>
+
       <div id="damage-numbers"></div>
+      <div id="hurt"></div>
       <div id="vignette"></div>
+
+      <!-- Touch -->
+      <div id="touch-ui" class="hidden">
+        <div id="look-zone"></div>
+        <div id="stick-zone"><div id="stick-base"><div id="stick-knob"></div></div></div>
+        <button id="btn-fire" class="tbtn big">◉</button>
+        <button id="btn-jump" class="tbtn">▲</button>
+        <button id="btn-crouch" class="tbtn">▼</button>
+        <button id="btn-reload" class="tbtn">R</button>
+        <button id="btn-ability" class="tbtn">⚡</button>
+        <button id="btn-switch" class="tbtn">⇄</button>
+        <button id="btn-zoom" class="tbtn">◎</button>
+        <button id="btn-shop" class="tbtn small">$</button>
+        <button id="btn-score" class="tbtn small">≡</button>
+      </div>
     </div>
+
+    <!-- Menu inicial -->
     <div id="menu" class="overlay">
       <div class="menu-card">
         <h1>A <span class="plague">PRAGA</span></h1>
-        <p class="sub">Zombie Plague 3D — inspirado no ZP 5.0</p>
-        <input id="name-input" type="text" maxlength="24" placeholder="Seu nome" />
+        <p class="sub">ZOMBIE PLAGUE 3D · de_plague2</p>
+        <input id="name-input" type="text" maxlength="24" placeholder="Seu nome" autocomplete="off" />
         <button id="join-btn">ENTRAR NA ARENA</button>
-        <p class="tip">WASD mover · Mouse mirar · Clique atirar · R habilidade · B loja · Tab placar · 1-3 classe</p>
+        <div class="controls" id="tip-desktop">
+          <div><b>WASD</b> mover · <b>Espaço</b> pular · <b>Ctrl</b> agachar</div>
+          <div><b>Mouse 1</b> atirar · <b>Mouse 2</b> zoom · <b>R</b> recarregar</div>
+          <div><b>1 2 3</b> / roda trocar arma · <b>E</b> habilidade</div>
+          <div><b>B</b> comprar · <b>Tab</b> placar · <b>Enter</b> chat</div>
+        </div>
+        <div class="controls hidden" id="tip-touch">
+          <div>Analógico esquerdo: mover · Arraste à direita: mirar</div>
+          <div>◉ atirar · ▲ pular · ▼ agachar · R recarregar</div>
+          <div>⚡ habilidade · ⇄ trocar arma · ◎ zoom · $ comprar</div>
+        </div>
+        <p class="tip">Modo: qualquer navegador — no celular use paisagem.</p>
       </div>
     </div>
+
+    <!-- Menu de compra estilo CS -->
     <div id="shop" class="overlay hidden">
-      <div class="menu-card shop-card">
-        <h2>LOJA <span class="ap">AP: <span id="shop-ap">0</span></span></h2>
-        <div id="shop-classes"></div>
-        <div id="shop-items"></div>
-        <button id="shop-close" class="close-btn">FECHAR [B]</button>
+      <div class="buy-card">
+        <div class="buy-head"><span id="shop-title">COMPRAR</span><span class="ap">$ <span id="shop-ap">0</span></span></div>
+        <div id="shop-list"></div>
+        <div class="buy-foot"><span id="shop-hint">0. Voltar · B/Esc fechar</span></div>
       </div>
     </div>
+
     <div id="scoreboard" class="overlay hidden">
       <div class="score-card">
-        <h2>PLACAR</h2>
+        <h2 id="score-title">PLACAR</h2>
         <table id="score-table">
           <thead>
             <tr><th>Jogador</th><th>Lado</th><th>Abates</th><th>Infecções</th><th>Mortes</th></tr>
@@ -57,9 +108,18 @@
         </table>
       </div>
     </div>
+
     <div id="dead" class="overlay hidden">
-      <div class="menu-card"><h2>☠️ MORTO</h2><p id="dead-reason"></p><p>O round vai continuar...</p></div>
+      <div class="menu-card dead-card">
+        <h2>☠ VOCÊ MORREU</h2>
+        <p id="dead-reason"></p>
+        <p id="dead-infected" class="hidden">🧟 Você virou zumbi. A horda te espera.</p>
+        <p class="respawn">Respawn em <b id="dead-timer">5</b>s</p>
+      </div>
     </div>
+
+    <div id="rotate-hint"><div>📱 Gire o celular para paisagem</div></div>
+
     <script type="module" src="/src/client/main.ts"></script>
   </body>
 </html>

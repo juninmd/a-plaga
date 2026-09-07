@@ -1,10 +1,12 @@
 import type { GameMode, Team } from "./protocol.js";
+import type { WeaponId } from "./weapons.js";
 
 // ===== Balanceamento herdado do BALANCE.md do zplague-addons =====
 // Multiplicadores de speed/gravity seguem o padrao ZP50 (1.0 = base 260 u/s).
 
 export const BALANCE = {
-  baseSpeed: 260,
+  // 260 u/s (GoldSrc) convertido para o mundo métrico (~39.37 u = 1 m)
+  baseSpeed: 6.6,
   playerRadius: 0.35,
   playerHeight: 1.8,
   eyeHeight: 1.6,
@@ -27,103 +29,15 @@ export const BALANCE = {
   firstZombieFuryDamage: 1.25,
   lastHumanBonusHp: 500,
   tickRate: 20,
+  // Agachar (CS: mais lento, mais preciso, hitbox menor)
+  crouchSpeedMult: 0.45,
+  crouchHeight: 1.25,
+  crouchEyeHeight: 1.0,
+  // Respawn em deathmatch
+  respawnDelay: 5,
 } as const;
 
-export interface WeaponDef {
-  name: string;
-  dmg: number;
-  headshotMult: number;
-  fireRate: number; // shots per second
-  magazine: number;
-  reserve: number;
-  reloadTime: number;
-  pellets: number; // shotgun spread
-  spread: number;
-  knockback: number;
-  range: number;
-  auto: boolean;
-  color: number;
-}
-
-export const WEAPONS: Record<string, WeaponDef> = {
-  rifle: {
-    name: "Fuzil M4",
-    dmg: 26,
-    headshotMult: 1.5,
-    fireRate: 9,
-    magazine: 30,
-    reserve: 90,
-    reloadTime: 2.2,
-    pellets: 1,
-    spread: 0.008,
-    knockback: 2.2,
-    range: 120,
-    auto: true,
-    color: 0x8a8f98,
-  },
-  shotgun: {
-    name: "Escopeta XM",
-    dmg: 12,
-    headshotMult: 1.5,
-    fireRate: 1.5,
-    magazine: 8,
-    reserve: 32,
-    reloadTime: 2.8,
-    pellets: 9,
-    spread: 0.055,
-    knockback: 8,
-    range: 30,
-    auto: false,
-    color: 0x5c4632,
-  },
-  deagle: {
-    name: "Deagle",
-    dmg: 45,
-    headshotMult: 1.5,
-    fireRate: 3.5,
-    magazine: 7,
-    reserve: 35,
-    reloadTime: 1.8,
-    pellets: 1,
-    spread: 0.015,
-    knockback: 5.3,
-    range: 80,
-    auto: false,
-    color: 0x33363c,
-  },
-  m249: {
-    name: "M249",
-    dmg: 30,
-    headshotMult: 1.5,
-    fireRate: 10,
-    magazine: 100,
-    reserve: 100000,
-    reloadTime: 3.5,
-    pellets: 1,
-    spread: 0.02,
-    knockback: 3,
-    range: 140,
-    auto: true,
-    color: 0x3a4a2a,
-  },
-  knife: {
-    name: "Garra",
-    dmg: 40,
-    headshotMult: 1.2,
-    fireRate: 1.7,
-    magazine: 1,
-    reserve: 0,
-    reloadTime: 0,
-    pellets: 1,
-    spread: 0,
-    knockback: 1,
-    range: 2.2,
-    auto: false,
-    color: 0x555,
-  },
-} as const;
-
-export type WeaponId = keyof typeof WEAPONS;
+export { WEAPONS, type WeaponDef, type WeaponId } from "./weapons.js";
 
 // ===== Classes =====
 
@@ -141,7 +55,9 @@ export interface ClassDef {
   color: number;
   scale?: number;
   armor?: number;
-  weapon?: WeaponId;
+  weapon?: WeaponId; // primária padrão
+  secondary?: WeaponId;
+  lockedWeapon?: boolean; // classe não pode trocar a primária no menu
   levelReq?: number;
 }
 
@@ -251,9 +167,10 @@ export const HUMAN_CLASSES: ClassDef[] = [
     knockback: 1.0,
     ability: "Granada de fogo (E)",
     abilityCooldown: 20,
-    desc: "O soldado padrão. Rifle confiável.",
+    desc: "O soldado padrão. Escolhe qualquer arma.",
     color: 0x2e7dd1,
-    weapon: "rifle",
+    weapon: "m4a1",
+    secondary: "usp",
   },
   {
     id: "medic",
@@ -267,7 +184,8 @@ export const HUMAN_CLASSES: ClassDef[] = [
     abilityCooldown: 15,
     desc: "Mantém a linha de frente viva.",
     color: 0x26a69a,
-    weapon: "rifle",
+    weapon: "mp5",
+    secondary: "glock",
   },
   {
     id: "heavy",
@@ -279,9 +197,11 @@ export const HUMAN_CLASSES: ClassDef[] = [
     knockback: 0.6,
     ability: "Rage — +50% vel 5s",
     abilityCooldown: 30,
-    desc: "Tanque humano. M2 lenta mas firme.",
+    desc: "Tanque humano. M249 lenta mas firme.",
     color: 0xef5350,
     weapon: "m249",
+    secondary: "deagle",
+    lockedWeapon: true,
     armor: 100,
     scale: 1.15,
   },
@@ -295,9 +215,10 @@ export const HUMAN_CLASSES: ClassDef[] = [
     knockback: 1.0,
     ability: "Invisível 5s",
     abilityCooldown: 20,
-    desc: "Some dos olhos da horda.",
+    desc: "Some dos olhos da horda. Nasce com AWP.",
     color: 0xcfd8dc,
-    weapon: "deagle",
+    weapon: "awp",
+    secondary: "deagle",
   },
   {
     id: "doomslayer",
@@ -311,7 +232,8 @@ export const HUMAN_CLASSES: ClassDef[] = [
     abilityCooldown: 14,
     desc: "A caçada é a recompensa. Nível 8.",
     color: 0xb71c1c,
-    weapon: "shotgun",
+    weapon: "xm1014",
+    secondary: "deagle",
     levelReq: 8,
   },
 ];
@@ -344,6 +266,8 @@ export const SURVIVOR_CLASS: ClassDef = {
   desc: "O último bastião.",
   color: 0x29b6f6,
   weapon: "m249",
+  secondary: "deagle",
+  lockedWeapon: true,
   armor: 200,
   scale: 1.1,
 };
