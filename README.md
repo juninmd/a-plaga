@@ -15,6 +15,14 @@ autoridade total; bots (com pathfinding A* no mapa) preenchem até 8 jogadores.
 - **1/2/3** ou roda do mouse trocar arma · **B** menu de compra · **Tab** placar · **Enter** chat
 - Celular: analógico esquerdo move, arrastar na direita mira, botões de tiro/pulo/agachar/recarga/habilidade/troca
 
+### Jogar online
+
+Na tela inicial: **JOGAR AGORA** entra na sala pública mais cheia (abre outra se lotar),
+a lista mostra as salas públicas, **+ SALA PRIVADA** gera um código de 5 letras e o
+link `?sala=CODIGO` (clique no código no HUD para copiar). Cada sala é uma partida
+independente (rounds, bots e física próprios, até 10 humanos). O HUD mostra o ping;
+se a conexão cair o cliente reconecta sozinho na mesma sala. Hospedagem: ver `docs/ONLINE.md`.
+
 ### Jogar no celular (rede local)
 
 ```powershell
@@ -47,6 +55,11 @@ andando/pulando e melhora agachado; recuo acumula por rajada.
   gelo, pipe bomb, colete, instinto/regeneração/fúria/investida zumbi.
 - **Economia AP**: começa com 1000; kill +3AP (zumbi)/+2AP (humano), dano 1/500,
   infecção +1, drop físico de ammo pack ao matar zumbi, vitória +3.
+- **Movimento estilo Source/CS**: fricção, aceleração no ar (air-strafe), teto anti-bhop 1,2×, coyote time,
+  pulo só na borda de subida. Servidor e cliente usam o mesmo `stepMovement`.
+- **Física**: granadas quicam/rolam em paredes e caixas (`src/shared/bounce.ts`), cuspe do Spitter explode no impacto;
+  no cliente cartuchos de latão e destroços de explosão são corpos rígidos que colidem com o mapa, e cadáveres
+  deslizam/tombam na direção do golpe.
 - **Knockback por arma** com multiplicador por classe (Tank/Nemesis quase imunes).
 - **"A Praga" narra**: mensagens em 1ª pessoa com humor brasileiro nos eventos.
 - **Killstreaks**: 3 IMPAREÁVEL, 5 DOMINADOR, 7 DEUS DO ZP.
@@ -81,4 +94,10 @@ Imagem `ghcr.io/juninmd/a-plaga:latest` via GitHub Actions; manifests no repo
   [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) e o site distribui os packs sob a
   [Quaternius Asset License](https://quaternius.com/license.html): uso livre em projetos pessoais e
   comerciais, sem obrigação de crédito, sem redistribuir os modelos como produto avulso.
-- Texturas, mapa, personagens, sons e demais assets são procedurais (gerados em código).
+- Personagem (humanos e zumbis): **Soldier.glb** (rig Mixamo "Vanguard") dos exemplos do
+  [three.js](https://github.com/mrdoob/three.js/tree/dev/examples/models/gltf), em `public/models/characters/`.
+  Assets Mixamo são gratuitos para uso em jogos, mas não podem ser redistribuídos avulsos — para um lançamento
+  comercial troque por um personagem próprio/licenciado (basta manter os nomes dos ossos `mixamorig*`).
+  As skins por classe são tintas/materiais aplicados sobre o mesmo modelo (`src/client/render/models/characters.ts`).
+- Texturas do mapa, sons e demais assets são procedurais (gerados em código).
+- Pesquisa de frameworks/assets: `docs/PESQUISA.md`. Visualizador de skins: `npm run dev` → `/dev-viewer.html`.

@@ -89,6 +89,12 @@ export class Renderer {
   meleeSwing(id: number) {
     this.playersReg.meleeSwing(id);
   }
+  playerShot(id: number) {
+    this.playersReg.shot(id);
+  }
+  corpseImpulse(id: number, dirX: number, dirZ: number, strength: number) {
+    this.playersReg.corpseImpulse(id, dirX, dirZ, strength);
+  }
   setPlayerPose(id: number, x: number, y: number, z: number, yaw: number, pitch: number) {
     this.playersReg.setPose(id, x, y, z, yaw, pitch);
   }
@@ -143,6 +149,25 @@ export class Renderer {
   }
   explosion(pos: THREE.Vector3, color: number, radius: number) {
     this.fx.explosion(pos, color, radius);
+  }
+  /** Ejeta um cartucho: da câmera (arma local) ou de `from` na direção do tiro (outros jogadores). */
+  casing(from: THREE.Vector3, dir: THREE.Vector3, local: boolean) {
+    const up = new THREE.Vector3(0, 1, 0);
+    if (local) {
+      this.camera.updateMatrixWorld();
+      const m = this.camera.matrixWorld;
+      const right = new THREE.Vector3().setFromMatrixColumn(m, 0).normalize();
+      const camUp = new THREE.Vector3().setFromMatrixColumn(m, 1).normalize();
+      const fwd = new THREE.Vector3().setFromMatrixColumn(m, 2).normalize().negate();
+      const pos = this.camera.position.clone().addScaledVector(right, 0.2).addScaledVector(camUp, -0.13).addScaledVector(fwd, 0.45);
+      this.fx.casing(pos, right, camUp, 1);
+    } else {
+      const right = new THREE.Vector3().crossVectors(dir, up).normalize();
+      this.fx.casing(from.clone().addScaledVector(right, 0.1), right, up, 1.3);
+    }
+  }
+  onCasingBounce(cb: (pos: THREE.Vector3, impact: number) => void) {
+    this.fx.onCasingBounce = cb;
   }
 
   damageNumber(pos: THREE.Vector3, value: number, headshot: boolean) {

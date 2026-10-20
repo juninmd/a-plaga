@@ -24,6 +24,7 @@ import { net } from "./net";
 import { roomFromUrl, roomLink, setupLobby, showLobbyError } from "./lobby";
 import { createRenderer, IS_MOBILE, type Renderer } from "./render/renderer";
 import { preloadWeaponModels } from "./render/models/gltf";
+import { preloadCharacterModels } from "./render/models/characters";
 import { renderShop, shopDigit, toggleShop } from "./shop";
 import { decayRecoil, registerShot, state } from "./state";
 import { setupTouch } from "./touch";
@@ -34,6 +35,15 @@ const $ = (id: string) => document.getElementById(id)!;
 const renderer: Renderer = createRenderer();
 const predictor = new Predictor();
 const interp = new Interpolator();
+let lastCasingSound = 0;
+renderer.onCasingBounce((pos, impact) => {
+  const nowMs = performance.now();
+  if (nowMs - lastCasingSound < 45) return; // cartuchos em rajada não viram metralhadora de beeps
+  lastCasingSound = nowMs;
+  const me = state.me;
+  const d = me ? Math.hypot(pos.x - me.pos.x, pos.z - me.pos.z) : 99;
+  audio.casing(Math.max(0, 1 - d / 12) * impact);
+});
 
 // ===== Ações compartilhadas entre teclado e touch =====
 
@@ -407,7 +417,7 @@ function frame() {
 // ===== Boot =====
 
 // Baixa os GLB das armas enquanto o jogador digita o nome
-const modelsReady = preloadWeaponModels();
+const modelsReady = Promise.all([preloadWeaponModels(), preloadCharacterModels()]);
 
 const urlRoom = roomFromUrl();
 setMenuBusy(false);

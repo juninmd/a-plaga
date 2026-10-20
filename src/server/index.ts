@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, normalize } from "node:path";
@@ -84,7 +84,32 @@ interface Conn extends WebSocket {
   isAlive?: boolean;
 }
 
-wss.on("connection", (ws: Conn) => {
+const MAX_CONN_PER_IP = Number(process.env.MAX_CONN_PER_IP ?? 8);
+const MAX_CONN_TOTAL = Number(process.env.MAX_CONN_TOTAL ?? 300);
+const connsByIp = new Map<string, number>();
+
+/** IP real do cliente: atrás de proxy/ingress (Traefik, Fly, Render) vem em X-Forwarded-For. */
+function clientIp(req: IncomingMessage): string {
+  const fwd = req.headers["x-forwarded-for"];
+  const first = (Array.isArray(fwd) ? fwd[0] : fwd)?.split(",")[0]?.trim();
+  return first || req.socket.remoteAddress || "?";
+}
+
+wss.on("connection", (ws: Conn, req: IncomingMessage) => {
+  // Limite por IP e total: um cliente (ou script) não derruba o servidor abrindo milhares de sockets
+  const ip = clientIp(req);
+  const open = connsByIp.get(ip) ?? 0;
+  if (open >= MAX_CONN_PER_IP || wss.clients.size > MAX_CONN_TOTAL) {
+    ws.close(1013, "too many connections");
+    return;
+  }
+  connsByIp.set(ip, open + 1);
+  ws.on("close", () => {
+    const n = (connsByIp.get(ip) ?? 1) - 1;
+    if (n <= 0) connsByIp.delete(ip);
+    else connsByIp.set(ip, n);
+  });
+
   let playerId = -1;
   let room: Room | null = null;
   let joined = false;

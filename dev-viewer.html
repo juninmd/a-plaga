@@ -1,0 +1,30 @@
+<!doctype html><html><body style="margin:0;background:#222">
+<script type="module">
+import * as THREE from "three";
+import { preloadCharacterModels, makeCharacter, HUMAN_AIM, ZOMBIE_POSE } from "/src/client/render/models/characters.ts";
+import { preloadWeaponModels } from "/src/client/render/models/gltf.ts";
+await Promise.all([preloadCharacterModels(), preloadWeaponModels()]);
+const r = new THREE.WebGLRenderer({ antialias: true });
+r.setSize(innerWidth, innerHeight); document.body.appendChild(r.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x8a7a60);
+scene.add(new THREE.HemisphereLight(0xfff2d0, 0x6a5a40, 1.4));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(3, 6, 4); scene.add(sun);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambertMaterial({ color: 0xb89868 })); floor.rotation.x = -Math.PI / 2; scene.add(floor);
+const q = new URLSearchParams(location.search);
+const rows = [
+  [["assault","human","m4a1"],["medic","human","mp5"],["heavy","human","m249"],["ghost","human","awp"],["doomslayer","human","xm1014"],["survivor","human","m249"]],
+  [["classic","zombie",""],["runner","zombie",""],["tank","zombie",""],["boomer","zombie",""],["smoker","zombie",""],["spitter","zombie",""],["witch","zombie",""],["nemesis","zombie",""]],
+];
+if (q.get('h')) Object.assign(HUMAN_AIM, JSON.parse(q.get('h'))); if (q.get('z')) Object.assign(ZOMBIE_POSE, JSON.parse(q.get('z')));
+const rigs = []; const only = q.get('only')?.split(',');
+rows.forEach((row0, ri) => { const row = only ? row0.filter((r) => only.includes(r[0])) : row0; row.forEach(([c, t, w], i) => {
+  const rig = makeCharacter(c, t, w); const x = (i - (row.length - 1) / 2) * 1.6;
+  rig.root.position.set(x, 0, ri * -2.2); const sc = { tank: 1.3, nemesis: 1.25, heavy: 1.15 }[c] ?? 1; rig.root.scale.setScalar(sc);
+  rig.root.rotation.y = Number(q.get("yaw") ?? 0.5);
+  scene.add(rig.root); rigs.push({ rig, speed: Number(q.get("speed") ?? 0), ri });
+}); });
+const cam = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 100);
+cam.position.set(Number(q.get("cx") ?? 0), Number(q.get("cy") ?? 2.6), Number(q.get("cz") ?? 7)); cam.lookAt(Number(q.get('lx') ?? 0), Number(q.get('ly') ?? 1), -1.1);
+const clock = new THREE.Clock(); let n = 0;
+r.setAnimationLoop(() => { const dt = clock.getDelta(); for (const o of rigs) o.rig.update(dt, { speed: o.speed, crouch: 0, airborne: false }); r.render(scene, cam); window.__ready = ++n > 20; });
+</script></body></html>

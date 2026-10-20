@@ -1,13 +1,18 @@
+import { CorpsePhysics } from "./corpse";
 import * as THREE from "three";
 import type { PlayerState, Team } from "../../shared/protocol";
 import { makeHumanModel, type BuiltModel } from "./models/human";
 import { makeZombieModel } from "./models/zombie";
+import { makeCharacter } from "./models/characters";
 import { IS_MOBILE } from "./textures";
 import { disposeTree } from "./dispose";
 
 // ===== Registro dos bonecos dos outros jogadores: animação, agachar, morte, name tag =====
 
 interface RenderedPlayer extends BuiltModel {
+  corpse?: CorpsePhysics;
+  /** Empurrão do golpe que matou (aplicado ao criar o cadáver). */
+  deathImpulse?: { x: number; y: number; z: number };
   team: Team;
   classId: string;
   weapon: string;
@@ -41,7 +46,21 @@ export class PlayerRegistry {
   }
 
   private build(p: PlayerState): RenderedPlayer {
-    const built = p.team === "zombie" ? makeZombieModel(p.color, p.classId) : makeHumanModel(p.color, p.classId, p.weapon);
+    const rig = makeCharacter(p.classId, p.team, p.weapon);
+    const built: BuiltModel = rig
+      ? {
+          group: rig.root,
+          upper: new THREE.Group(),
+          legL: new THREE.Group(), legR: new THREE.Group(), shinL: new THREE.Group(), shinR: new THREE.Group(),
+          armL: new THREE.Group(), armR: new THREE.Group(),
+          tinted: [],
+          fadeable: rig.materials,
+          armRest: { l: 0, r: 0 },
+          rig,
+        }
+      : p.team === "zombie"
+        ? makeZombieModel(p.color, p.classId)
+        : makeHumanModel(p.color, p.classId, p.weapon);
     const group = built.group;
     if (!IS_MOBILE) group.traverse((o) => { if (o instanceof THREE.Mesh) o.castShadow = true; });
 
@@ -97,10 +116,17 @@ export class PlayerRegistry {
       rp.group.position.set(p.pos.x, p.pos.y, p.pos.z);
     }
     rp.target = p;
-    if (rp.alive && !p.alive) rp.diedAt = performance.now();
+    if (rp.alive && !p.alive) {
+      rp.diedAt = performance.now();
+      rp.rig?.die();
+    }
     if (!rp.alive && p.alive) {
       // Respawn: reseta a pose do cadáver
       rp.diedAt = 0;
+      rp.corpse = undefined;
+      rp.deathImpulse = undefined;
+      rp.rig?.revive();
+      rp.group.rotation.order = "XYZ";
       rp.group.rotation.set(0, p.yaw, 0);
       rp.group.position.set(p.pos.x, p.pos.y, p.pos.z);
       for (const m of rp.fadeable) { m.transparent = false; m.opacity = 1; }
@@ -177,7 +203,14 @@ export class PlayerRegistry {
 
   meleeSwing(id: number) {
     const rp = this.players.get(id);
-    if (rp) rp.swing = 1;
+    if (!rp) return;
+    rp.swing = 1;
+    rp.rig?.melee();
+  }
+
+  /** Disparo de outro jogador: tranco no personagem. */
+  shot(id: number) {
+    this.players.get(id)?.rig?.shoot();
   }
 
   /** Pose vinda do interpolador (chamada a cada frame, sem alocar). */
@@ -196,7 +229,7 @@ export class PlayerRegistry {
       const p = rp.target;
       const isLocal = p.id === this.localId;
       if (!p.alive && rp.diedAt > 0) {
-        this.animateCorpse(rp, nowMs - rp.diedAt, isLocal);
+        this.animateCorpse(rp, nowMs - rp.diedAt, isLocal, dt);
         continue;
       }
       rp.group.visible = p.alive && !isLocal;
@@ -223,6 +256,11 @@ export class PlayerRegistry {
 
       // Ciclo de caminhada pela velocidade real informada pelo servidor
       const speed = p.speed ?? 0;
+      if (rp.rig) {
+        rp.crouch += ((p.crouching ? 1 : 0) - rp.crouch) * Math.min(1, dt * 10);
+        rp.rig.update(dt, { speed, crouch: rp.crouch, airborne: py > 0.2, pitch });
+        continue;
+      }
       const amp = Math.min(0.7, speed * 0.1);
       rp.walkPhase += dt * (3 + speed * 1.9);
       const swing = Math.sin(rp.walkPhase) * amp;
@@ -247,18 +285,39 @@ export class PlayerRegistry {
     }
   }
 
-  /** Cai para trás, escurece e some depois de alguns segundos. */
-  private animateCorpse(rp: RenderedPlayer, ms: number, isLocal: boolean) {
+  /** Empurrão do golpe fatal: o cadáver desliza e tomba para o lado de onde veio o impacto. */
+  corpseImpulse(id: number, dirX: number, dirZ: number, strength: number) {
+    const rp = this.players.get(id);
+    if (!rp || rp.corpse) return;
+    rp.deathImpulse = { x: dirX * strength, y: strength * 0.15, z: dirZ * strength };
+  }
+
+  /** Cadáver com física própria: desliza/bate em paredes, tomba na direção do impacto, escurece e some. */
+  private animateCorpse(rp: RenderedPlayer, ms: number, isLocal: boolean, dt: number) {
     if (ms > CORPSE_MS) {
       rp.group.visible = false;
       return;
     }
+    if (!rp.corpse) {
+      const v = rp.target.vel ?? { x: 0, y: 0, z: 0 };
+      rp.corpse = new CorpsePhysics(rp.target.pos, v, rp.deathImpulse ?? { x: 0, y: 0, z: 0 }, rp.group.rotation.y);
+      rp.group.rotation.order = "YXZ";
+    }
+    rp.corpse.step(dt);
     rp.group.visible = !isLocal;
     rp.nameTag.visible = false;
-    const t = Math.min(1, ms / 450);
-    const ease = 1 - (1 - t) * (1 - t);
+    const ease = rp.corpse.fall;
+    if (rp.rig) {
+      // O clipe "die" já derruba o corpo; a física só desliza/bate-e-volta o cadáver
+      rp.group.position.set(rp.corpse.x, rp.corpse.y, rp.corpse.z);
+      rp.rig.update(dt, { speed: 0, crouch: 0, airborne: false });
+      const f = ms > CORPSE_MS - 1500 ? (CORPSE_MS - ms) / 1500 : 1;
+      if (f < 1) for (const m of rp.fadeable) { m.transparent = true; m.opacity = f; }
+      return;
+    }
+    rp.group.position.set(rp.corpse.x, rp.corpse.y + ease * 0.22, rp.corpse.z);
+    rp.group.rotation.y = rp.corpse.fallYaw;
     rp.group.rotation.x = ease * (Math.PI / 2 - 0.12);
-    rp.group.position.y = rp.target.pos.y + ease * 0.25;
     rp.legL.rotation.x = 0.3 * ease;
     rp.legR.rotation.x = -0.2 * ease;
     rp.armL.rotation.x = rp.armRest.l + ease * 1.1;
