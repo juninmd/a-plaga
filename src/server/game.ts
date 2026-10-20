@@ -220,8 +220,17 @@ export class Game {
     if (this.nextRoundTimer) clearTimeout(this.nextRoundTimer);
     this.nextRoundTimer = setTimeout(() => {
       this.nextRoundTimer = null;
+      setTime(this.serverTime); // o relógio de physics.now() é global: fixa o desta sala
       this.startRound();
     }, ms);
+  }
+
+  /** Sala destruída: cancela o próximo round agendado. */
+  dispose() {
+    if (this.nextRoundTimer) clearTimeout(this.nextRoundTimer);
+    this.nextRoundTimer = null;
+    this.clients.clear();
+    this.players = [];
   }
 
   // ===== Tick =====

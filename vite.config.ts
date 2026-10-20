@@ -5,6 +5,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/ws": { target: "ws://localhost:8080", ws: true },
+      "/rooms": "http://localhost:8080",
     },
   },
   build: {

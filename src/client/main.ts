@@ -3,6 +3,7 @@ import { audio } from "./audio";
 import { handleFx } from "./fx";
 import {
   addChat,
+  esc,
   addKillfeed,
   markSpawned,
   renderScore,
@@ -20,12 +21,13 @@ import { buildInput, isCrouching, isMoving, look, sendInput, setupInput, touch }
 import { Interpolator } from "./interp";
 import { Predictor } from "./predict";
 import { net } from "./net";
+import { roomFromUrl, roomLink, setupLobby, showLobbyError } from "./lobby";
 import { createRenderer, IS_MOBILE, type Renderer } from "./render/renderer";
 import { preloadWeaponModels } from "./render/models/gltf";
 import { renderShop, shopDigit, toggleShop } from "./shop";
 import { decayRecoil, registerShot, state } from "./state";
 import { setupTouch } from "./touch";
-import type { PlayerState, ServerMsg, ServerSnapshot, WeaponSlot } from "../shared/protocol";
+import type { JoinPayload, PlayerState, RoomInfo, ServerMsg, ServerSnapshot, WeaponSlot } from "../shared/protocol";
 import { WEAPONS } from "../shared/weapons";
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -70,22 +72,36 @@ function closeMenus() {
 // ===== Entrada no jogo =====
 
 let joining = false;
-async function joinGame() {
-  if (joining) return;
+let inGame = false;
+
+function setMenuBusy(busy: boolean) {
+  for (const id of ["join-btn", "create-room-btn", "join-code-btn"]) ($(id) as HTMLButtonElement).disabled = busy;
+  $("join-btn").textContent = busy ? "ENTRANDO…" : urlRoom ? `ENTRAR NA SALA ${urlRoom}` : "JOGAR AGORA";
+}
+
+/** Pede entrada ao servidor; o menu só fecha quando o welcome chega (sala cheia/inexistente volta com erro). */
+async function requestJoin(opts: Omit<JoinPayload, "name">) {
+  if (joining || inGame) return;
   joining = true;
-  const btn = $("join-btn") as HTMLButtonElement;
-  btn.disabled = true;
-  btn.textContent = "CARREGANDO ARMAS…";
+  showLobbyError("");
+  setMenuBusy(true);
+  $("join-btn").textContent = "CARREGANDO ARMAS…";
   await modelsReady; // nunca rejeita: arma sem GLB cai no modelo procedural
   const name = ($("name-input") as HTMLInputElement).value.trim() || "Jogador";
   localStorage.setItem("a-plaga-name", name);
   audio.init();
   audio.resume();
+  $("join-btn").textContent = "ENTRANDO…";
+  net.join({ name, ...opts });
+}
+
+function enterGame(room: RoomInfo) {
+  inGame = true;
   audio.wind();
   $("menu").classList.add("hidden");
   $("hud").classList.remove("hidden");
+  $("ping-box").classList.remove("hidden");
   if (IS_MOBILE) $("touch-ui").classList.remove("hidden");
-  net.send({ t: "join", d: { name } });
   setupInput(renderer.renderer.domElement, IS_MOBILE, {
     toggleShop: () => toggleShop(),
     toggleScore,
@@ -98,7 +114,37 @@ async function joinGame() {
     onFire,
   });
   if (IS_MOBILE) setupTouch({ toggleShop: () => toggleShop(), toggleScore: () => toggleScore(), onSwitch, onReload });
+  showRoom(room);
 }
+
+function showRoom(room: RoomInfo) {
+  net.onWelcome(room.code);
+  const tag = $("room-tag");
+  tag.textContent = room.code;
+  tag.title = "Clique para copiar o link da sala";
+  $("score-room").innerHTML = `${esc(room.name)} · código <b>${esc(room.code)}</b> · ${esc(roomLink(room.code))}`;
+  history.replaceState(null, "", `?sala=${room.code}`);
+}
+
+$("room-tag").addEventListener("click", async () => {
+  const link = roomLink(net.roomCode);
+  try {
+    await navigator.clipboard.writeText(link);
+    addChat("Sistema", `Link da sala copiado: ${link}`, true, 0x00e676);
+  } catch {
+    addChat("Sistema", `Link da sala: ${link}`, true, 0x00e676);
+  }
+});
+
+/** Ping/latência no HUD. */
+setInterval(() => {
+  if (!inGame) return;
+  const ms = net.ping;
+  $("ping-text").textContent = ms < 0 ? "—" : `${Math.round(ms)} ms`;
+  const box = $("ping-box");
+  box.classList.toggle("mid", ms >= 90 && ms < 160);
+  box.classList.toggle("bad", ms >= 160);
+}, 1000);
 
 // ===== Rede =====
 
@@ -110,6 +156,9 @@ net.connect(
   (msg: ServerMsg) => {
     switch (msg.t) {
       case "welcome": {
+        joining = false;
+        if (inGame) showRoom(msg.d.room);
+        else enterGame(msg.d.room);
         state.id = msg.d.id;
         state.snapshot = msg.d.snapshot;
         renderer.localId = msg.d.id;
@@ -184,7 +233,13 @@ net.connect(
         else if (msg.d.winner === "zombie") audio.lose();
         break;
       case "error":
-        addChat("Sistema", msg.d, true, 0xff5252);
+        if (!inGame) {
+          // Recusada na entrada (sala cheia/inexistente): volta ao menu com o motivo
+          joining = false;
+          net.clearJoin();
+          setMenuBusy(false);
+          showLobbyError(msg.d);
+        } else addChat("Sistema", msg.d, true, 0xff5252);
         break;
     }
   },
@@ -354,10 +409,13 @@ function frame() {
 // Baixa os GLB das armas enquanto o jogador digita o nome
 const modelsReady = preloadWeaponModels();
 
-$("join-btn").addEventListener("click", joinGame);
+const urlRoom = roomFromUrl();
+setMenuBusy(false);
+$("join-btn").addEventListener("click", () => requestJoin(urlRoom ? { room: urlRoom } : {}));
 $("name-input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") joinGame();
+  if (e.key === "Enter") void requestJoin(urlRoom ? { room: urlRoom } : {});
 });
+setupLobby({ join: (p) => void requestJoin(p) });
 if (IS_MOBILE) {
   $("tip-desktop").classList.add("hidden");
   $("tip-touch").classList.remove("hidden");

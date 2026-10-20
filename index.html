@@ -19,7 +19,7 @@
       <div id="scope" class="hidden"><div class="scope-ring"></div><div class="scope-h"></div><div class="scope-v"></div></div>
 
       <!-- Topo -->
-      <div id="hud-top-left"><div id="ap-text">$ 0</div><div id="net-status" class="hidden">reconectando…</div></div>
+      <div id="hud-top-left"><div id="ap-text">$ 0</div><div id="net-status" class="hidden">reconectando…</div><div id="ping-box" class="hidden"><span id="ping-dot"></span><span id="ping-text">—</span><span id="room-tag"></span></div></div>
       <div id="round-info"><span id="round-time">00:00</span><span id="round-mode">—</span><span id="round-teams"></span></div>
       <div id="killfeed"></div>
 
@@ -72,7 +72,19 @@
         <h1>A <span class="plague">PRAGA</span></h1>
         <p class="sub">ZOMBIE PLAGUE 3D · de_plague2</p>
         <input id="name-input" type="text" maxlength="24" placeholder="Seu nome" autocomplete="off" />
-        <button id="join-btn">ENTRAR NA ARENA</button>
+        <button id="join-btn">JOGAR AGORA</button>
+        <div class="lobby">
+          <div class="lobby-head"><span>SALAS ONLINE</span><button id="rooms-refresh" class="ghost" title="Atualizar">↻</button></div>
+          <div id="rooms-list" class="rooms-list"><div class="room-empty">Procurando salas…</div></div>
+          <div class="lobby-actions">
+            <button id="create-room-btn" class="ghost">+ SALA PRIVADA</button>
+            <div class="code-join">
+              <input id="room-code-input" type="text" maxlength="8" placeholder="CÓDIGO" autocomplete="off" spellcheck="false" />
+              <button id="join-code-btn" class="ghost">ENTRAR</button>
+            </div>
+          </div>
+          <div id="lobby-error" class="lobby-error hidden"></div>
+        </div>
         <div class="controls" id="tip-desktop">
           <div><b>WASD</b> mover · <b>Espaço</b> pular · <b>Ctrl</b> agachar</div>
           <div><b>Mouse 1</b> atirar · <b>Mouse 2</b> zoom · <b>R</b> recarregar</div>
@@ -100,6 +112,7 @@
     <div id="scoreboard" class="overlay hidden">
       <div class="score-card">
         <h2 id="score-title">PLACAR</h2>
+        <div id="score-room" class="score-room"></div>
         <table id="score-table">
           <thead>
             <tr><th>Jogador</th><th>Lado</th><th>Abates</th><th>Infecções</th><th>Mortes</th></tr>

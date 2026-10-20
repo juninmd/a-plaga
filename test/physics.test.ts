@@ -136,3 +136,40 @@ describe("balanceamento", () => {
     expect(Math.abs(yaw)).toBeLessThan(0.01);
   });
 });
+
+import { makeBody, stepBody } from "../src/shared/bounce.js";
+
+describe("física de quique (granadas)", () => {
+  it("quica no chão perdendo energia até parar", () => {
+    const b = makeBody({ x: 0, y: 3, z: 0 }, { x: 0, y: 0, z: 0 });
+    let bounces = 0;
+    let maxY = 0;
+    for (let i = 0; i < 400; i++) {
+      const h = stepBody(b, 0.05, [], 12);
+      if (h.impact > 2) bounces++;
+      if (i > 20) maxY = Math.max(maxY, b.pos.y);
+    }
+    expect(bounces).toBeGreaterThanOrEqual(1);
+    expect(b.pos.y).toBeCloseTo(b.radius, 2);
+    expect(Math.abs(b.vel.y)).toBeLessThan(0.05);
+  });
+
+  it("reflete numa parede em vez de atravessar", () => {
+    const wall = { min: { x: 5, y: 0, z: -5 }, max: { x: 5.5, y: 8, z: 5 } };
+    const b = makeBody({ x: 0, y: 1.5, z: 0 }, { x: 25, y: 0, z: 0 });
+    let hit = false;
+    for (let i = 0; i < 20; i++) {
+      const r = stepBody(b, 0.05, [wall], 0);
+      if (r.impact > 1) hit = true;
+    }
+    expect(hit).toBe(true);
+    expect(b.pos.x).toBeLessThan(5);
+    expect(b.vel.x).toBeLessThan(0);
+  });
+
+  it("rola e desacelera no chão por atrito", () => {
+    const b = makeBody({ x: 0, y: 0.12, z: 0 }, { x: 6, y: 0, z: 0 });
+    for (let i = 0; i < 100; i++) stepBody(b, 0.05, [], 12);
+    expect(Math.hypot(b.vel.x, b.vel.z)).toBeLessThan(0.1);
+  });
+});

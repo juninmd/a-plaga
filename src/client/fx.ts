@@ -106,6 +106,9 @@ export function handleFx(renderer: Renderer, fx: FxEvent) {
       if (mine) hitmarker(true);
       break;
     }
+    case "bounce":
+      audio.impact(fxVolume(fx.pos, 20) * (0.25 + (fx.value ?? 0.5) * 0.5));
+      break;
     case "pickup":
       if (fxVolume(fx.pos, 6) > 0.2) audio.buy();
       break;

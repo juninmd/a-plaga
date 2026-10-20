@@ -94,6 +94,7 @@ export type FxKind =
   | "invisible"
   | "pickup"
   | "tongue"
+  | "bounce"
   | "death";
 
 export interface FxEvent {
@@ -147,8 +148,22 @@ export interface InputState {
   zoom: boolean;
 }
 
+export interface RoomInfo {
+  code: string;
+  name: string;
+  players: number;
+  max: number;
+  mode: string;
+  phase: string;
+  isPublic: boolean;
+}
+
 export interface JoinPayload {
   name: string;
+  /** Código de uma sala existente. */
+  room?: string;
+  /** Cria uma sala nova (privada por padrão). */
+  create?: { name?: string; isPublic?: boolean };
 }
 
 export interface BuyPayload {
@@ -167,12 +182,14 @@ export type ClientMsg =
   | { t: "switch"; d: { slot: WeaponSlot } }
   | { t: "reload" }
   | { t: "selectClass"; d: SelectClassPayload }
-  | { t: "chat"; d: { text: string } };
+  | { t: "chat"; d: { text: string } }
+  | { t: "ping"; d: { c: number } };
 
 // ===== Server -> Client (events) =====
 
 export type ServerMsg =
-  | { t: "welcome"; d: { id: number; snapshot: ServerSnapshot } }
+  | { t: "welcome"; d: { id: number; snapshot: ServerSnapshot; room: RoomInfo } }
+  | { t: "pong"; d: { c: number } }
   | { t: "snapshot"; d: ServerSnapshot }
   | { t: "event"; d: FxEvent }
   | { t: "kill"; d: KillFeedEntry }
@@ -184,4 +201,4 @@ export type ServerMsg =
   | { t: "tick"; d: { hp: number; armor: number; ap: number; ammo: number; reserve: number } }
   | { t: "error"; d: string };
 
-export const PROTOCOL = "a-plaga-v2";
+export const PROTOCOL = "a-plaga-v3";
