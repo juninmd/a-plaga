@@ -21,6 +21,8 @@ import { buildInput, isCrouching, isMoving, look, sendInput, setupInput, touch }
 import { Interpolator } from "./interp";
 import { Predictor } from "./predict";
 import { net } from "./net";
+import { updateCompass, updateRadar } from "./radar";
+import { setPredictedPos } from "./predictedPos";
 import { roomFromUrl, roomLink, setupLobby, showLobbyError } from "./lobby";
 import { createRenderer, IS_MOBILE, type Renderer } from "./render/renderer";
 import { preloadWeaponModels } from "./render/models/gltf";
@@ -331,6 +333,8 @@ function ambientSounds(snap: ServerSnapshot) {
 // ===== Loop de render (vsync via setAnimationLoop) =====
 
 let lastFrame = performance.now();
+let prevYaw = 0;
+let prevPitch = 0;
 const camPos = new THREE.Vector3();
 let fpsFrames = 0;
 let fpsLast = performance.now();
@@ -400,17 +404,30 @@ function frame() {
     const eye = (crouching ? 1.0 : 1.6) * me.scale;
     camPos.set(px, py + eye, pz);
     renderer.setLocalCamera(camPos, look.yaw, look.pitch);
+    setPredictedPos({ x: px, y: py, z: pz });
     if (window.__camSamples.length < 400) window.__camSamples.push(px, pz);
     if (me.alive && speed > 1 && !airborne) audio.footstep(speed, me.team === "zombie", 0.8);
   }
   updateCrosshair(moving || speed > 1, airborne, crouching);
+  if (me) {
+    updateRadar(look.yaw);
+    updateCompass(look.yaw);
+  }
+  const inp = buildInput();
   renderer.frame({
     moving: moving && speed > 0.5,
     reloading: me?.reloading === true,
     alive: me?.alive !== false,
     crouching,
     speed,
+    lookDYaw: look.yaw - prevYaw,
+    lookDPitch: look.pitch - prevPitch,
+    strafe: inp.moveX,
+    forward: inp.moveY,
+    airborne,
   });
+  prevYaw = look.yaw;
+  prevPitch = look.pitch;
   if (me && !me.alive) updateHUD(); // contador de respawn
 }
 

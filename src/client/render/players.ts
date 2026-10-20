@@ -156,7 +156,7 @@ export class PlayerRegistry {
       glowMat.opacity = 0.22 + Math.sin(this.clock.elapsedTime * 4) * 0.1;
       glowMat.color.setHex(p.team === "zombie" ? 0xff1744 : 0x29b6f6);
     } else if (p.team === "zombie") {
-      glowMat.opacity = 0.07;
+      glowMat.opacity = 0.02;
       glowMat.color.setHex(0x00e676);
     } else glowMat.opacity = 0;
 

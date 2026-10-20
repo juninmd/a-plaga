@@ -6,6 +6,9 @@
     <meta name="theme-color" content="#0a0f0d" />
     <title>A PRAGA — Zombie Plague 3D</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ctext y=%2714%27 font-size=%2714%27%3E%F0%9F%A7%9F%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Barlow+Condensed:wght@500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/src/client/style.css" />
   </head>
   <body>
@@ -19,8 +22,18 @@
       <div id="scope" class="hidden"><div class="scope-ring"></div><div class="scope-h"></div><div class="scope-v"></div></div>
 
       <!-- Topo -->
-      <div id="hud-top-left"><div id="ap-text">$ 0</div><div id="net-status" class="hidden">reconectando…</div><div id="ping-box" class="hidden"><span id="ping-dot"></span><span id="ping-text">—</span><span id="room-tag"></span></div></div>
-      <div id="round-info"><span id="round-time">00:00</span><span id="round-mode">—</span><span id="round-teams"></span></div>
+      <div id="hud-top-left">
+        <div id="radar-wrap"><canvas id="radar" width="176" height="176"></canvas><i id="radar-me"></i></div>
+        <div id="ap-text">$ 0</div>
+        <div id="net-status" class="hidden">reconectando…</div>
+        <div id="ping-box" class="hidden"><span id="ping-dot"></span><span id="ping-text">—</span><span id="room-tag"></span></div>
+      </div>
+      <div id="round-info">
+        <div class="team z"><svg viewBox="0 0 24 24" class="ic"><path d="M12 2C7 2 4 6 4 10c0 2 1 3.5 2 4.5V19h2v-2h2v2h4v-2h2v2h2v-4.5c1-1 2-2.5 2-4.5 0-4-3-8-8-8zM9 11a1.6 1.6 0 110-3.2A1.6 1.6 0 019 11zm6 0a1.6 1.6 0 110-3.2A1.6 1.6 0 0115 11z"/></svg><b id="cnt-z">0</b></div>
+        <div class="mid"><span id="round-time">00:00</span><span id="round-mode">—</span></div>
+        <div class="team h"><b id="cnt-h">0</b><svg viewBox="0 0 24 24" class="ic"><path d="M12 12a4.5 4.5 0 100-9 4.5 4.5 0 000 9zm0 2c-4 0-8 2-8 5v2h16v-2c0-3-4-5-8-5z"/></svg></div>
+      </div>
+      <div id="compass"><div id="compass-strip"></div><i id="compass-mark"></i></div>
       <div id="killfeed"></div>
 
       <!-- Centro -->
@@ -35,15 +48,23 @@
           <input id="chat-input" type="text" maxlength="140" placeholder="Enter para falar…" autocomplete="off" />
         </div>
         <div id="vitals">
-          <div class="vital" id="hp-box"><span class="icon">✚</span><span id="hp-text">100</span></div>
-          <div class="vital" id="armor-box"><span class="icon">⛨</span><span id="armor-text">0</span></div>
+          <div class="vital hp" id="hp-box">
+            <svg viewBox="0 0 24 24" class="vic"><path d="M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7z"/></svg>
+            <div class="vbody"><span class="vnum" id="hp-text">100</span><div class="vtrack"><i id="hp-fill"></i><i id="hp-ghost"></i></div></div>
+          </div>
+          <div class="vital armor" id="armor-box">
+            <svg viewBox="0 0 24 24" class="vic"><path d="M12 2l8 3v6c0 5-3.5 9.5-8 11-4.5-1.5-8-6-8-11V5l8-3z"/></svg>
+            <div class="vbody"><span class="vnum" id="armor-text">0</span><div class="vtrack"><i id="armor-fill"></i></div></div>
+          </div>
+          <div id="ability"><div id="ability-ring"><b>E</b></div><span id="ability-info"></span></div>
         </div>
       </div>
       <div id="hud-right">
-        <div id="ability-info"></div>
         <div id="weapon-name"></div>
-        <div id="ammo-box"><span id="ammo-cur">0</span><span class="ammo-sep">|</span><span id="ammo-res">0</span></div>
-        <div id="slots"><span class="slot" data-slot="1">1</span><span class="slot" data-slot="2">2</span><span class="slot" data-slot="3">3</span></div>
+        <div id="ammo-box"><span id="ammo-cur">0</span><span class="ammo-sep">/</span><span id="ammo-res">0</span></div>
+        <div id="mag-pips"></div>
+        <div id="reload-hint" class="hidden">R · RECARREGAR</div>
+        <div id="slots"><span class="slot" data-slot="1"><i>1</i><em></em></span><span class="slot" data-slot="2"><i>2</i><em></em></span><span class="slot" data-slot="3"><i>3</i><em></em></span></div>
       </div>
 
       <div id="damage-numbers"></div>

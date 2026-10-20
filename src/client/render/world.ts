@@ -1,7 +1,10 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { MAP } from "../../shared/map";
-import { IS_MOBILE, concreteTexture, plankTexture, rustTexture, sandTexture, sandstoneTexture, tex } from "./textures";
+import { IS_MOBILE, sandTexture, tex } from "./textures";
+import { pbrMaterial } from "./pbr";
+import { buildProps } from "./props";
+import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 
 // ===== Mundo estático: chão, paredes, arcos, túneis, props, céu, luzes =====
 
@@ -47,15 +50,15 @@ function addMerged(scene: THREE.Scene, geos: THREE.BufferGeometry[], mat: THREE.
   }
 }
 
-export function buildWorld(scene: THREE.Scene): World {
+export function buildWorld(scene: THREE.Scene, renderer?: THREE.WebGLRenderer): World {
   const shadows = !IS_MOBILE;
 
   // --- Iluminação: sol de fim de tarde empoeirado ---
   scene.background = new THREE.Color(0x8c7a5c);
-  scene.fog = new THREE.Fog(0x9c8a68, IS_MOBILE ? 50 : 70, IS_MOBILE ? 130 : 190);
-  scene.add(new THREE.HemisphereLight(0xe6d6b4, 0x7a6340, 1.15));
+  scene.fog = new THREE.Fog(0xcdbf9f, IS_MOBILE ? 55 : 80, IS_MOBILE ? 140 : 210);
+  scene.add(new THREE.HemisphereLight(0xe6d6b4, 0x7a6340, 1.3));
   scene.add(new THREE.AmbientLight(0x8a7a60, 0.45));
-  const sun = new THREE.DirectionalLight(0xffe0b0, 1.6);
+  const sun = new THREE.DirectionalLight(0xffe0b0, 1.35);
   sun.position.set(50, 70, 20);
   sun.castShadow = shadows;
   if (shadows) {
@@ -69,23 +72,39 @@ export function buildWorld(scene: THREE.Scene): World {
   }
   scene.add(sun);
 
+  // --- Céu HDRI (Poly Haven, CC0): reflexo/ambiente reais + sol alinhado com o disco do céu ---
+  if (renderer) {
+    new RGBELoader().load("/env/sky.hdr", (hdr) => {
+      hdr.mapping = THREE.EquirectangularReflectionMapping;
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      scene.environment = pmrem.fromEquirectangular(hdr).texture;
+      scene.environmentIntensity = 1.25;
+      scene.background = hdr;
+      scene.backgroundIntensity = 1.0;
+      scene.backgroundBlurriness = 0.0;
+      pmrem.dispose();
+      const dir = brightestDirection(hdr);
+      if (dir) sun.position.copy(dir.multiplyScalar(90));
+      skyDome.visible = false;
+    });
+  }
+
+  let skyDome: THREE.Object3D = new THREE.Object3D(); // preenchido adiante; o HDRI esconde o domo de degradê
+
   // --- Chão ---
-  const sand = tex("sand", sandTexture);
-  sand.repeat.set(MAP.size.x / 2, MAP.size.z / 2);
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(MAP.size.x * 2, MAP.size.z * 2),
-    new THREE.MeshStandardMaterial({ map: sand, color: 0xe8cfa0, roughness: 0.98 }),
-  );
+  const floorMat = pbrMaterial("sand", { color: 0xf0dcb0, roughness: 1, repeat: 1, normalScale: 0.8 });
+  (floorMat.map as THREE.Texture).repeat.set(MAP.size.x / 2.5, MAP.size.z / 2.5);
+  (floorMat.normalMap as THREE.Texture).repeat.set(MAP.size.x / 2.5, MAP.size.z / 2.5);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(MAP.size.x * 2, MAP.size.z * 2), floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
 
   // --- Geometria estática mesclada por material ---
-  const stone = new THREE.MeshStandardMaterial({ map: tex("sandstone", sandstoneTexture), color: 0xf4e2bc, roughness: 0.92 });
-  const stoneDark = new THREE.MeshStandardMaterial({ map: tex("sandstone", sandstoneTexture), color: 0xa89068, roughness: 0.95 });
-  const plank = new THREE.MeshStandardMaterial({ map: tex("plank", plankTexture), color: 0xc9a071, roughness: 0.85 });
-  const concrete = new THREE.MeshStandardMaterial({ map: tex("concrete", concreteTexture), color: 0xb8b0a0, roughness: 0.9 });
-  const rust = new THREE.MeshStandardMaterial({ map: tex("rust", rustTexture), color: 0xb08060, roughness: 0.7, metalness: 0.35 });
+  const stone = pbrMaterial("brick", { color: 0xffe6c0, roughness: 0.95, normalScale: 1.3 });
+  const stoneDark = pbrMaterial("concrete", { color: 0xbfae90, roughness: 0.95, normalScale: 1.0 });
+  const plank = pbrMaterial("wood", { color: 0xd8b890, roughness: 0.85 });
+  const concrete = pbrMaterial("concrete", { color: 0xd0c8b8, roughness: 0.92 });
 
   const walls: THREE.BufferGeometry[] = [];
   const caps: THREE.BufferGeometry[] = [];
@@ -134,15 +153,8 @@ export function buildWorld(scene: THREE.Scene): World {
   addMerged(scene, crates, plank, shadows);
   addMerged(scene, pillars, concrete, shadows);
 
-  // --- Props: barris ---
-  const barrelGeos: THREE.BufferGeometry[] = [];
-  for (const p of MAP.props) {
-    if (p.kind !== "barrel") continue;
-    const g = new THREE.CylinderGeometry(0.55, 0.55, 1.2, 14);
-    g.translate(p.pos.x, 0.6, p.pos.z);
-    barrelGeos.push(g);
-  }
-  addMerged(scene, barrelGeos, rust, shadows);
+  // --- Props 3D (barris, pneus, sacos, galões) carregados em segundo plano ---
+  void buildProps(scene);
 
   // --- Decoração determinística perto dos spawns: sacos de areia e tábuas ---
   const sandbag = new THREE.MeshStandardMaterial({ map: tex("sand", sandTexture), color: 0x9a8a66, roughness: 1 });
@@ -202,6 +214,7 @@ export function buildWorld(scene: THREE.Scene): World {
   );
   sky.renderOrder = -10;
   scene.add(sky);
+  skyDome = sky;
   const sunDisc = new THREE.Mesh(
     new THREE.CircleGeometry(9, 24),
     new THREE.MeshBasicMaterial({ color: 0xfff1c8, fog: false, transparent: true, opacity: 0.95 }),
@@ -238,4 +251,25 @@ export function buildWorld(scene: THREE.Scene): World {
       dust.rotation.y = t * 0.01;
     },
   };
+}
+
+/** Direção (mundo) do texel mais brilhante do HDRI = o sol. */
+function brightestDirection(tex: THREE.DataTexture): THREE.Vector3 | null {
+  const img = tex.image as { data: ArrayLike<number>; width: number; height: number };
+  const { data, width, height } = img;
+  if (!data || !width) return null;
+  const half = data instanceof Uint16Array;
+  const val = (i: number) => (half ? THREE.DataUtils.fromHalfFloat(data[i] as number) : (data[i] as number));
+  let best = -1, bx = 0, by = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const l = val(i) + val(i + 1) + val(i + 2);
+      if (l > best) { best = l; bx = x; by = y; }
+    }
+  }
+  const az = ((bx + 0.5) / width - 0.5) * Math.PI * 2;
+  const el = (0.5 - (by + 0.5) / height) * Math.PI; // linha 0 = topo
+  const e = Math.abs(el); // o sol está sempre acima do horizonte
+  return new THREE.Vector3(Math.cos(az) * Math.cos(e), Math.sin(e), Math.sin(az) * Math.cos(e)).normalize();
 }

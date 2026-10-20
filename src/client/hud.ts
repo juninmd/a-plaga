@@ -8,6 +8,14 @@ import { WEAPONS } from "../shared/weapons";
 
 const $ = (id: string) => document.getElementById(id)!;
 
+function setScale(id: string, v: number) {
+  const key = `${id}.s`;
+  const t = v.toFixed(3);
+  if (textCache.get(key) === t) return;
+  textCache.set(key, t);
+  $(id).style.transform = `scaleX(${t})`;
+}
+
 // Escrever no DOM a 20 Hz força layout mesmo sem mudança — só escreve quando o valor muda
 const textCache = new Map<string, string>();
 function setText(id: string, value: string) {
@@ -34,8 +42,12 @@ export function updateHUD() {
   const me = state.me;
   if (!me) return;
   setText("hp-text", String(Math.max(0, Math.round(state.hp))));
-  setClass("hp-box", "low", state.hp / me.maxHp < 0.3);
+  const hpPct = Math.max(0, Math.min(1, state.hp / me.maxHp));
+  setScale("hp-fill", hpPct);
+  setScale("hp-ghost", hpPct);
+  setClass("hp-box", "low", hpPct < 0.3);
   setText("armor-text", String(Math.round(state.armor)));
+  setScale("armor-fill", Math.max(0, Math.min(1, state.armor / 200)));
   setClass("armor-box", "dim", state.armor <= 0);
   setText("ap-text", `$ ${state.ap}`);
 
@@ -46,6 +58,15 @@ export function updateHUD() {
   setText("ammo-res", melee ? "" : String(state.reserve));
   setClass("ammo-box", "empty", !melee && state.ammo === 0 && !me.reloading);
   setClass("ammo-box", "reloading", me.reloading);
+  // Pips do carregador (só quando cabem: até 40 balas)
+  const mag = w && !melee ? w.magazine : 0;
+  const pipKey = `${mag}|${me.reloading ? -1 : state.ammo}`;
+  if (textCache.get("pips") !== pipKey) {
+    textCache.set("pips", pipKey);
+    const pips = $("mag-pips");
+    pips.innerHTML = mag > 0 && mag <= 40 ? Array.from({ length: mag }, (_, i) => `<i class="${i < (me.reloading ? 0 : state.ammo) ? "" : "off"}"></i>`).join("") : "";
+  }
+  setClass("reload-hint", "hidden", melee || me.reloading || state.ammo > Math.max(2, mag * 0.25) || state.reserve <= 0);
   const slotsKey = `${state.slots.join(",")}|${state.weapon}`;
   if (textCache.get("slots-key") !== slotsKey) {
     textCache.set("slots-key", slotsKey);
@@ -55,17 +76,19 @@ export function updateHUD() {
       el.classList.toggle("has", !!id);
       el.classList.toggle("active", !!id && id === state.weapon);
       el.title = id ? weaponName(id) : "";
+      const em = el.querySelector("em");
+      if (em) em.textContent = id ? weaponName(id).toUpperCase() : "";
     }
   }
   setClass("slots", "hidden", state.team === "zombie");
   if (lastWeaponShown !== state.weapon) lastWeaponShown = state.weapon;
 
-  const abilityKey = "E";
-  setText("ability-info", state.abilityReady ? `${abilityKey} · habilidade pronta` : `${abilityKey} · recarregando`);
+  setText("ability-info", state.abilityReady ? "Habilidade pronta" : "Recarregando");
   setClass("ability-info", "ready", state.abilityReady);
+  setClass("ability", "ready", state.abilityReady);
+  setClass("ability", "cooling", !state.abilityReady);
 
   // Vinheta vermelha quando HP baixo (quantizada para não reescrever o estilo a cada tick)
-  const hpPct = state.hp / me.maxHp;
   const vig =
     hpPct < 0.35
       ? `inset 0 0 ${Math.round((1 - hpPct / 0.35) * 180 + 80)}px rgba(198,40,40,${((0.35 - hpPct) * 1.5).toFixed(2)})`
@@ -142,7 +165,8 @@ export function updateRoundInfo() {
   $("round-time").textContent = `${mm}:${ss}`;
   $("round-time").classList.toggle("urgent", r.phase !== "countdown" && time <= 20);
   $("round-mode").textContent = `${r.modeLabel} · R${r.number}`;
-  $("round-teams").textContent = `🧟 ${r.zombies}  vs  🧍 ${r.humans}`;
+  setText("cnt-z", String(r.zombies));
+  setText("cnt-h", String(r.humans));
   const center = $("hud-center");
   if (r.phase === "countdown") {
     center.innerHTML = `<div class="big">${Math.ceil(r.timeLeft)}</div><div class="mode">${esc(r.modeLabel)}</div>`;
@@ -207,7 +231,7 @@ export function addKillfeed(killer: string, victim: string, weapon: string, head
   el.className = "kill";
   const mine = state.me && (killer === state.me.name || victim === state.me.name);
   if (mine) el.classList.add("mine");
-  const head = headshot ? " 🎯" : "";
+  const head = headshot ? ' <svg class="hs" viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 3v3m0 8v3M5 12h3m8 0h3M12 9a3 3 0 100 6 3 3 0 000-6z" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>' : "";
   const st = streak ? ` <span class="streak">${esc(streak)}</span>` : "";
   el.innerHTML = `<b>${esc(killer)}</b> <span class="w">[${esc(weapon)}]</span>${head} <b>${esc(victim)}</b>${st}`;
   $("killfeed").appendChild(el);

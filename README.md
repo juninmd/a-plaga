@@ -33,6 +33,18 @@ Abra o endereço impresso no navegador do celular (mesma rede Wi‑Fi, tela em
 paisagem). O `node.exe` precisa estar liberado no firewall do Windows para
 conexões de entrada.
 
+## HUD, mapa e viewmodel (visual)
+
+- **HUD v2**: layout em painéis chanfrados (fonte Rajdhani), radar circular rotativo (aliados sempre, inimigos por proximidade),
+  bússola, placar de round com contagem de zumbis/humanos, vida/colete em barras segmentadas com "fantasma" de dano,
+  anel de habilidade, munição com pips do carregador, aviso de recarga e slots com nome da arma.
+- **Mapa**: texturas PBR (Poly Haven, CC0) com normal map em chão/paredes/madeira/concreto, céu HDRI com sol alinhado à luz,
+  sombras, props 3D (barris, pneus, sacos de cimento, galões) ao pé das paredes. Desktop: AO (GTAO) + bloom leve e MSAA;
+  `?fx=0` desliga o pós-processamento (mobile já vem desligado).
+- **Viewmodel**: passe de render próprio (FOV 62, depth limpo — a arma não atravessa parede), inércia por mola amortecida ao
+  mover o mouse, inclinação ao andar de lado, pose de corrida, impacto ao pousar, fumaça do cano e recarga em fases
+  (mão esquerda troca o carregador no tempo real da arma).
+
 ## Arsenal (CS 1.6)
 
 Armas são grátis no menu **B** (compra só no spawn, como no CS): AK-47, M4A1,
@@ -99,6 +111,7 @@ Imagem `ghcr.io/juninmd/a-plaga:latest` via GitHub Actions; manifests no repo
   Assets Mixamo são gratuitos para uso em jogos, mas não podem ser redistribuídos avulsos — para um lançamento
   comercial troque por um personagem próprio/licenciado (basta manter os nomes dos ossos `mixamorig*`).
   As skins por classe são tintas/materiais aplicados sobre o mesmo modelo (`src/client/render/models/characters.ts`).
-- Texturas do mapa, sons e demais assets são procedurais (gerados em código).
+- Texturas PBR, HDRI do céu e props 3D do mapa: [Poly Haven](https://polyhaven.com) (CC0) — `public/textures`, `public/env`, `public/models/props`.
+- Sons e demais assets são procedurais (gerados em código). Pesquisa de HUD/mapa/viewmodel: `docs/PESQUISA-VISUAL.md`.
 - Pesquisa de frameworks/assets: `docs/PESQUISA.md`. Visualizadores (com `npm run dev`): `/dev-viewer.html` (skins) e `/dev-viewmodel.html?w=m4a1&c=assault` (primeira pessoa; `team=zombie&w=claws` para zumbi).
 - Primeira pessoa: braços e luvas do mesmo soldado (malha só dos braços, IK de 2 ossos até as empunhaduras da arma); zumbis têm braços rasgados com garras. Zumbis em 3ª pessoa: cabeça apodrecida com olhos brilhantes, sangue/necrose por shader e acessórios por classe (espinhos do Tank, bolsa de bile do Boomer, chifres do Nemesis…).
