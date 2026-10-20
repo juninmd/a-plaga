@@ -100,4 +100,5 @@ Imagem `ghcr.io/juninmd/a-plaga:latest` via GitHub Actions; manifests no repo
   comercial troque por um personagem próprio/licenciado (basta manter os nomes dos ossos `mixamorig*`).
   As skins por classe são tintas/materiais aplicados sobre o mesmo modelo (`src/client/render/models/characters.ts`).
 - Texturas do mapa, sons e demais assets são procedurais (gerados em código).
-- Pesquisa de frameworks/assets: `docs/PESQUISA.md`. Visualizador de skins: `npm run dev` → `/dev-viewer.html`.
+- Pesquisa de frameworks/assets: `docs/PESQUISA.md`. Visualizadores (com `npm run dev`): `/dev-viewer.html` (skins) e `/dev-viewmodel.html?w=m4a1&c=assault` (primeira pessoa; `team=zombie&w=claws` para zumbi).
+- Primeira pessoa: braços e luvas do mesmo soldado (malha só dos braços, IK de 2 ossos até as empunhaduras da arma); zumbis têm braços rasgados com garras. Zumbis em 3ª pessoa: cabeça apodrecida com olhos brilhantes, sangue/necrose por shader e acessórios por classe (espinhos do Tank, bolsa de bile do Boomer, chifres do Nemesis…).

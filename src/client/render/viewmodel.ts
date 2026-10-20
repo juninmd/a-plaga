@@ -3,6 +3,7 @@ import type { Team } from "../../shared/protocol";
 import { makeWeaponModel, weaponMeta } from "./models/weapons";
 import { getWeaponModel } from "./models/gltf";
 import { disposeTree } from "./dispose";
+import { makeArmsRig, type ArmsRig } from "./models/arms";
 import { IS_MOBILE, smokeTexture, tex } from "./textures";
 
 // ===== Arma em primeira pessoa: braços + arma presos na câmera =====
@@ -40,13 +41,24 @@ export class Viewmodel {
   private shellMat = new THREE.MeshStandardMaterial({ color: 0xc9a04a, metalness: 0.8, roughness: 0.35 });
   private shellGeo = new THREE.CylinderGeometry(0.006, 0.006, 0.022, 5);
   private base = { ...BASE };
+  private arms: ArmsRig | null = null;
+  private armKey = "";
+  private len = 0.9;
+  private pistol = false;
   hidden = false;
 
   constructor(private camera: THREE.PerspectiveCamera, private scene: THREE.Scene) {}
 
-  set(weaponId: string, team: Team) {
+  set(weaponId: string, team: Team, classId = "") {
     const id = team === "zombie" ? "claws" : weaponId;
-    if (this.holder && this.weaponId === id) return;
+    const key = `${id}|${classId}`;
+    if (this.holder && this.armKey === key) return;
+    this.armKey = key;
+    if (this.arms) {
+      this.camera.remove(this.arms.root);
+      disposeTree(this.arms.root);
+      this.arms = null;
+    }
     if (this.holder) {
       this.camera.remove(this.holder);
       disposeTree(this.holder);
@@ -60,60 +72,41 @@ export class Viewmodel {
     this.raise = 1;
 
     const holder = new THREE.Group();
-    const skin = new THREE.MeshStandardMaterial({ color: team === "zombie" ? 0x6f7a4a : 0x1b1d20, roughness: 0.8 });
-    const sleeve = new THREE.MeshStandardMaterial({ color: team === "zombie" ? 0x3d3a2a : 0x4a4636, roughness: 0.9 });
 
+    this.arms = makeArmsRig(classId, team === "zombie", team === "zombie" ? 0.9 : 0.6);
+    if (this.arms) {
+      // Ombros logo abaixo/atrás da câmera: o espaço do modelo tem o ombro a ~(0, 1,45, 0,065)·escala
+      this.arms.root.position.set(0.12, -0.42 - 1.45 * this.arms.scale, -0.2 - 0.065 * this.arms.scale);
+      this.camera.add(this.arms.root);
+    }
     if (id === "claws") {
-      for (const side of [-1, 1]) {
-        const hand = new THREE.Group();
-        const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.3), skin);
-        forearm.position.set(0, 0, 0.16);
-        hand.add(forearm, new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.05, 0.1), sleeve));
-        hand.add(makeWeaponModel("claws"));
-        hand.scale.setScalar(0.85);
-        hand.position.set(side * 0.2, -0.2, -0.46);
-        hand.rotation.set(0.2, side * -0.3, side * 0.12);
-        holder.add(hand);
+      if (this.arms) {
+        // Garras presas aos ossos da mão: seguem a pose do braço
+        for (const side of ["L", "R"] as const) {
+          const claws = makeWeaponModel("claws");
+          const holderClaw = new THREE.Group();
+          holderClaw.rotation.x = Math.PI / 2;
+          holderClaw.position.y = 0.075;
+          holderClaw.scale.setScalar(0.3);
+          holderClaw.add(claws);
+          const hand = this.arms.hand(side);
+          this.arms.root.updateMatrixWorld(true);
+          const ws = new THREE.Vector3();
+          hand.getWorldScale(ws);
+          const wrap = new THREE.Group();
+          wrap.scale.setScalar(1 / (ws.x || 1));
+          wrap.add(holderClaw);
+          hand.add(wrap);
+        }
       }
     } else {
       const gun = makeWeaponModel(id);
       holder.add(gun);
-      const mkHand = (x: number, y: number, z: number, ry = 0) => {
-        const h = new THREE.Group();
-        const fist = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.11), skin);
-        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.085, 0.22), sleeve);
-        arm.position.set(0.05, -0.07, 0.16);
-        arm.rotation.y = -0.25;
-        h.add(fist, arm);
-        h.position.set(x, y, z);
-        h.rotation.y = ry;
-        return h;
-      };
-      const pistol = id === "deagle" || id === "usp" || id === "glock";
+      this.pistol = id === "deagle" || id === "usp" || id === "glock";
       const loaded = getWeaponModel(id);
       const off = loaded ? VM_OFFSET[id] : undefined;
-      if (loaded) {
-        // GLB: origem na empunhadura; mão de apoio no handguard (um terço do cano à frente)
-        const len = loaded.box.max.z - loaded.box.min.z;
-        // Mãos do GLB: punho na empunhadura com o antebraço descendo para a direita (fora da tela),
-        // mão de apoio sob o handguard com o antebraço descendo para a esquerda
-        const mkArm = (x: number, y: number, z: number, yaw: number, pitch: number) => {
-          const arm = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.075, 0.3), sleeve);
-          arm.position.set(x, y, z);
-          arm.rotation.set(pitch, yaw, 0);
-          return arm;
-        };
-        const fist = (x: number, y: number, z: number) => {
-          const f = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.085, 0.09), skin);
-          f.position.set(x, y, z);
-          return f;
-        };
-        holder.add(fist(0.0, -0.05, 0.03), mkArm(0.06, -0.14, 0.16, -0.35, 0.45));
-        if (!pistol && id !== "knife") holder.add(fist(-0.01, -0.035, -len * 0.42), mkArm(-0.07, -0.13, -len * 0.42 + 0.14, 0.4, 0.5));
-        else if (pistol) holder.add(fist(-0.045, -0.06, 0.0), mkArm(-0.09, -0.16, 0.12, 0.35, 0.5));
-      } else {
-        holder.add(mkHand(0.02, -0.14, 0.18), mkHand(-0.05, -0.1, pistol ? 0.06 : id === "knife" ? 0.15 : -0.26, 0.3));
-      }
+      this.len = loaded ? loaded.box.max.z - loaded.box.min.z : 0.8;
+      if (id === "knife") this.arms?.hide("L", true);
       holder.scale.setScalar(off?.s ?? 0.5);
       this.base = off ? { x: off.x, y: off.y, z: off.z } : { ...BASE };
       holder.position.set(this.base.x, this.base.y, this.base.z);
@@ -202,6 +195,7 @@ export class Viewmodel {
     const vm = this.holder;
     if (!vm) return;
     vm.visible = alive && !zoomed && !this.hidden;
+    if (this.arms) this.arms.root.visible = vm.visible;
     if (!vm.visible) return;
     this.bob += dt * (moving ? 6 + speed * 0.6 : 2);
     this.recoil = Math.max(0, this.recoil - dt * 7);
@@ -228,10 +222,40 @@ export class Viewmodel {
       this.recoil * 0.05 + Math.sin(this.reloadAnim * Math.PI) * 0.3,
     );
 
+    this.poseArms();
+
     if (this.muzzle && this.muzzle.visible && nowMs > this.muzzleUntil) {
       this.muzzle.visible = false;
       if (this.muzzleGlow) this.muzzleGlow.visible = false;
       if (this.muzzleLight) this.muzzleLight.intensity = 0;
     }
+  }
+
+  /** Leva as mãos do soldado até as empunhaduras da arma (ou às garras do zumbi) a cada frame. */
+  private poseArms() {
+    const arms = this.arms;
+    const holder = this.holder;
+    if (!arms || !holder) return;
+    holder.updateMatrix();
+    const q = holder.quaternion;
+    const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+    const toCam = (p: THREE.Vector3) => p.applyMatrix4(holder.matrix);
+    const dir = (d: THREE.Vector3) => d.applyQuaternion(q);
+    if (this.weaponId === "claws") {
+      const t = this.bob;
+      for (const side of ["L", "R"] as const) {
+        const k = side === "R" ? 1 : -1;
+        // Golpe: a mão avança e cruza o campo de visão
+        const sw = this.recoil;
+        const target = v(k * (0.2 - sw * 0.18), -0.2 + sw * 0.06 + Math.sin(t + k) * 0.01, -0.46 - sw * 0.26);
+        arms.reach(side, target, v(k * -0.1, -0.1, -1), v(k * -0.3, -1, 0), v(k * 0.6, -1, 0.2), 0.55);
+      }
+      return;
+    }
+    const grip = this.pistol;
+    arms.reach("R", toCam(v(0.0, -0.045, 0.035)), dir(v(0, -0.3, -0.95)), dir(v(-1, 0, 0)), dir(v(0.6, -1, 0.25)), 1.15);
+    if (this.weaponId === "knife") return;
+    if (grip) arms.reach("L", toCam(v(-0.025, -0.075, 0.03)), dir(v(0, -0.55, -0.8)), dir(v(1, 0, 0)), dir(v(-0.6, -1, 0.25)), 1.0);
+    else arms.reach("L", toCam(v(0.0, -0.03, -this.len * 0.28)), dir(v(0, 0.05, -1)), dir(v(0, 1, 0)), dir(v(-0.5, -1, 0.25)), 0.75);
   }
 }

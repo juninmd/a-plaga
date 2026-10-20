@@ -279,7 +279,7 @@ function applySnapshot(snap: ServerSnapshot) {
       state.reserve = p.reserve;
       state.abilityReady = p.abilityReady;
       if (p.slots) state.slots = p.slots;
-      renderer.setViewmodel(p.weapon, p.team);
+      renderer.setViewmodel(p.weapon, p.team, p.classId);
       if (p.reloading && !lastReloading) {
         renderer.viewmodelReload();
         audio.reload();

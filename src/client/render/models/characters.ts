@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { makeWeaponModel } from "./weapons";
+import { applyRot, dressZombie, dropBones } from "./zombieParts";
 
 // ===== Personagens: soldado tático realista (rig Mixamo "Vanguard") — humanos e zumbis compartilham o rig =====
 // Humanos: pose de arma pelos ossos dos braços sobre os clipes Idle/Walk/Run (pernas seguem a velocidade).
@@ -69,6 +70,12 @@ export function preloadCharacterModels(): Promise<void> {
   return preload;
 }
 
+/** Clone do soldado já na altura-alvo (para os braços em primeira pessoa). */
+export function cloneSoldier(): { scene: THREE.Group; k: number } | null {
+  if (!source) return null;
+  return { scene: cloneSkinned(source) as THREE.Group, k: TARGET_HEIGHT / naturalHeight };
+}
+
 export function charactersReady(): boolean {
   return source != null;
 }
@@ -90,10 +97,10 @@ export const HUMAN_AIM: PoseDef = {
 
 /** Zumbi: tronco curvado, braços estendidos à frente, cabeça caída. */
 export const ZOMBIE_POSE: PoseDef = {
-  RightArm: [0, 1.5, 0.0],
-  RightForeArm: [0, 0, 0.25],
-  LeftArm: [0, -1.5, 0.0],
-  LeftForeArm: [0, 0, 0.25],
+  RightArm: [1.35, 0, -0.15],
+  RightForeArm: [0, 0, 0.2],
+  LeftArm: [-1.35, 0, -0.15], // eixos X/Y do rig são espelhados entre os lados; Z não
+  LeftForeArm: [0, 0, 0.2],
   Spine: [0.16, 0, 0],
   Spine1: [0.18, 0, 0],
   Spine2: [0.1, 0, 0],
@@ -152,9 +159,17 @@ export function makeCharacter(classId: string, team: "human" | "zombie", weaponI
         m.metalness = 0;
       }
     }
+    if (zombie && !visor) {
+      applyRot(m, skin.emissive ? 1 : 0.7, classId.length * 0.137);
+      o.geometry = dropBones(o, /Head$|HeadTop/i); // tira o capacete: entra a cabeça de zumbi
+    }
     o.material = m;
     materials.push(m);
   });
+  if (zombie) {
+    root.updateMatrixWorld(true);
+    materials.push(...dressZombie(model, classId, skin.tint, skin.visor).materials);
+  }
 
   // Ossos controlados à mão (pose de arma / zumbi) por cima da animação
   const pose = zombie ? ZOMBIE_POSE : HUMAN_AIM;

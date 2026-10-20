@@ -105,8 +105,8 @@ export class Renderer {
 
   // ===== Viewmodel =====
 
-  setViewmodel(weaponId: string, team: Team) {
-    this.vm.set(weaponId, team);
+  setViewmodel(weaponId: string, team: Team, classId = "") {
+    this.vm.set(weaponId, team, classId);
   }
   viewmodelFire() {
     this.vm.fire();
