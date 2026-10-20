@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { makeBody, stepBody, type BounceBody } from "../../shared/bounce";
+import { MAP } from "../../shared/map";
 import { IS_MOBILE, bloodSplatTexture, bulletHoleTexture, smokeTexture, tex } from "./textures";
 
 // ===== Efeitos: tracers, impactos, decalques, sangue, explosões, punch/shake de câmera =====
@@ -12,6 +14,18 @@ interface Particle {
   grow?: number;
   fade?: boolean;
 }
+
+/** Corpo rígido visual (cápsula de cartucho, estilhaço): quica nas paredes/caixas do mapa de verdade. */
+interface RigidBit {
+  mesh: THREE.Mesh;
+  body: BounceBody;
+  spin: THREE.Vector3;
+  until: number;
+  asleep: boolean;
+  onBounce?: (impact: number) => void;
+}
+
+const MAX_RIGID = IS_MOBILE ? 24 : 64;
 
 class DecalPool {
   private items: THREE.Mesh[] = [];
@@ -40,7 +54,9 @@ class DecalPool {
 export class Effects {
   private tracers: { mesh: THREE.Mesh; until: number }[] = [];
   private particles: Particle[] = [];
-  private lights: { light: THREE.PointLight; until: number }[] = [];
+  /** Pool FIXO de luzes de clarão (tiro/explosão): criar/remover luz muda o shader e recompila tudo. */
+  private flashPool: { light: THREE.PointLight; until: number }[] = [];
+  private flashNext = 0;
   private holes: DecalPool;
   private splats: DecalPool;
   private smokeMat: THREE.SpriteMaterial;
@@ -49,6 +65,11 @@ export class Effects {
   private bloodMat = new THREE.MeshBasicMaterial({ color: 0x8a0f14 });
   private debrisMat = new THREE.MeshBasicMaterial({ color: 0x2a2420 });
   private tracerMat = new Map<number, THREE.MeshBasicMaterial>();
+  private rigid: RigidBit[] = [];
+  private brassMat = new THREE.MeshStandardMaterial({ color: 0xc9a04a, metalness: 0.85, roughness: 0.35 });
+  private casingGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.05, 6);
+  /** Chamado quando um cartucho quica no chão (som de "tlim"). */
+  onCasingBounce: ((pos: THREE.Vector3, impact: number) => void) | null = null;
   private sparkGeo = new THREE.BoxGeometry(0.03, 0.03, 0.12);
   private dropGeo = new THREE.SphereGeometry(0.05, 4, 3);
   private debrisGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
@@ -59,6 +80,12 @@ export class Effects {
   private shakeT = 0;
 
   constructor(private scene: THREE.Scene) {
+    const POOL = IS_MOBILE ? 1 : 3;
+    for (let i = 0; i < POOL; i++) {
+      const light = new THREE.PointLight(0xffffff, 0, 20, 1.5);
+      scene.add(light);
+      this.flashPool.push({ light, until: 0 });
+    }
     this.holes = new DecalPool(scene, tex("hole", bulletHoleTexture), 0.22, IS_MOBILE ? 24 : 64);
     this.splats = new DecalPool(scene, tex("splat", bloodSplatTexture), 1.1, IS_MOBILE ? 12 : 32);
     this.smokeMat = new THREE.SpriteMaterial({ map: tex("smoke", smokeTexture), color: 0x6a6058, transparent: true, opacity: 0.55, depthWrite: false });
@@ -68,6 +95,32 @@ export class Effects {
     this.scene.add(mesh);
     const born = performance.now();
     this.particles.push({ mesh, vel, until: born + life, born, gravity, ...extra });
+  }
+
+  private addRigid(mesh: THREE.Mesh, vel: THREE.Vector3, life: number, over: Partial<BounceBody>, spin = 12) {
+    if (this.rigid.length >= MAX_RIGID) {
+      const old = this.rigid.shift()!;
+      this.scene.remove(old.mesh);
+    }
+    this.scene.add(mesh);
+    this.rigid.push({
+      mesh,
+      body: makeBody({ x: mesh.position.x, y: mesh.position.y, z: mesh.position.z }, { x: vel.x, y: vel.y, z: vel.z }, over),
+      spin: new THREE.Vector3((Math.random() - 0.5) * spin, (Math.random() - 0.5) * spin, (Math.random() - 0.5) * spin),
+      until: performance.now() + life,
+      asleep: false,
+    });
+  }
+
+  /** Cartucho ejetado: sai para a direita da arma, quica no chão/parede e fica ali um tempo. */
+  casing(pos: THREE.Vector3, right: THREE.Vector3, up: THREE.Vector3, scale = 1) {
+    const m = new THREE.Mesh(this.casingGeo, this.brassMat);
+    m.scale.setScalar(scale);
+    m.position.copy(pos);
+    const v = right.clone().multiplyScalar(1.6 + Math.random() * 0.9).addScaledVector(up, 1.4 + Math.random() * 0.8);
+    v.x += (Math.random() - 0.5) * 0.6;
+    v.z += (Math.random() - 0.5) * 0.6;
+    this.addRigid(m, v, 6000, { radius: 0.02 * scale, restitution: 0.55, friction: 0.4, rolling: 6 }, 40);
   }
 
   tracer(from: THREE.Vector3, to: THREE.Vector3, color: number) {
@@ -128,7 +181,9 @@ export class Effects {
       const m = new THREE.Mesh(this.debrisGeo, i % 3 ? this.debrisMat : new THREE.MeshBasicMaterial({ color }));
       m.position.copy(pos);
       m.rotation.set(Math.random() * 3, Math.random() * 3, 0);
-      this.spawn(m, new THREE.Vector3((Math.random() - 0.5) * 2, Math.random() * 1.6 + 0.4, (Math.random() - 0.5) * 2).multiplyScalar(radius * 1.6), 600 + Math.random() * 400, 14);
+      m.scale.setScalar(0.6 + Math.random() * 0.8);
+      const v = new THREE.Vector3((Math.random() - 0.5) * 2, Math.random() * 1.6 + 0.4, (Math.random() - 0.5) * 2).multiplyScalar(radius * 1.6);
+      this.addRigid(m, v, 2500 + Math.random() * 1500, { radius: 0.07, restitution: 0.4, friction: 0.35, rolling: 5 }, 14);
     }
     for (let i = 0; i < (IS_MOBILE ? 3 : 7); i++) {
       const s = new THREE.Sprite(this.smokeMat.clone());
@@ -152,11 +207,14 @@ export class Effects {
   }
 
   lightFlash(pos: THREE.Vector3, color: number, intensity: number, distance: number) {
-    if (IS_MOBILE) return;
-    const light = new THREE.PointLight(color, intensity, distance);
-    light.position.copy(pos);
-    this.scene.add(light);
-    this.lights.push({ light, until: performance.now() + 120 });
+    if (this.flashPool.length === 0) return;
+    const f = this.flashPool[this.flashNext];
+    this.flashNext = (this.flashNext + 1) % this.flashPool.length;
+    f.light.position.copy(pos);
+    f.light.color.setHex(color);
+    f.light.distance = distance;
+    f.light.intensity = intensity;
+    f.until = performance.now() + 120;
   }
 
   punch(pitch: number, yaw: number) {
@@ -182,17 +240,40 @@ export class Effects {
     ];
   }
 
+  private updateRigid(dt: number, nowMs: number) {
+    const step = Math.min(dt, 1 / 30);
+    this.rigid = this.rigid.filter((r) => {
+      if (nowMs > r.until) {
+        this.scene.remove(r.mesh);
+        if (r.mesh.material !== this.brassMat && r.mesh.material !== this.debrisMat) (r.mesh.material as THREE.Material).dispose();
+        return false;
+      }
+      if (r.asleep) return true;
+      const hit = stepBody(r.body, step, MAP.boxes, 14);
+      r.mesh.position.set(r.body.pos.x, r.body.pos.y, r.body.pos.z);
+      const speed = Math.hypot(r.body.vel.x, r.body.vel.y, r.body.vel.z);
+      r.mesh.rotation.x += r.spin.x * step * Math.min(1, speed / 3);
+      r.mesh.rotation.y += r.spin.y * step * Math.min(1, speed / 3);
+      r.mesh.rotation.z += r.spin.z * step * Math.min(1, speed / 3);
+      if (hit.impact > 1.5 && r.mesh.material === this.brassMat) this.onCasingBounce?.(r.mesh.position, Math.min(1, hit.impact / 5));
+      if (hit.grounded && speed < 0.05) r.asleep = true; // parou: deixa de custar CPU
+      return true;
+    });
+  }
+
   update(dt: number) {
     const nowMs = performance.now();
+    this.updateRigid(dt, nowMs);
     this.tracers = this.tracers.filter((t) => {
       if (nowMs > t.until) { this.scene.remove(t.mesh); t.mesh.geometry.dispose(); return false; }
       return true;
     });
-    this.lights = this.lights.filter((l) => {
-      if (nowMs > l.until) { this.scene.remove(l.light); return false; }
-      l.light.intensity *= 0.8;
-      return true;
-    });
+    for (const l of this.flashPool) {
+      if (l.light.intensity > 0) {
+        if (nowMs > l.until) l.light.intensity = 0;
+        else l.light.intensity *= 0.82;
+      }
+    }
     this.particles = this.particles.filter((p) => {
       if (nowMs > p.until) { this.scene.remove(p.mesh); this.releaseParticle(p.mesh); return false; }
       p.mesh.position.addScaledVector(p.vel, dt);

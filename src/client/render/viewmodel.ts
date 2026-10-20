@@ -3,6 +3,8 @@ import type { Team } from "../../shared/protocol";
 import { makeWeaponModel, weaponMeta } from "./models/weapons";
 import { getWeaponModel } from "./models/gltf";
 import { disposeTree } from "./dispose";
+import { WEAPONS } from "../../shared/weapons";
+import { makeArmsRig, type ArmsRig } from "./models/arms";
 import { IS_MOBILE, smokeTexture, tex } from "./textures";
 
 // ===== Arma em primeira pessoa: braços + arma presos na câmera =====
@@ -23,14 +25,32 @@ const VM_OFFSET: Record<string, { x: number; y: number; z: number; s: number; ry
   knife: { x: 0.16, y: -0.17, z: -0.3, s: 0.6, ry: 0.25 },
 };
 
+export interface VmFrame {
+  moving: boolean;
+  reloading: boolean;
+  alive: boolean;
+  speed: number;
+  zoomed: boolean;
+  /** Variação de yaw/pitch neste frame (rad) — alimenta o balanço/inércia. */
+  lookDYaw: number;
+  lookDPitch: number;
+  /** -1..1 (esquerda/direita) e (trás/frente) do input de movimento. */
+  strafe: number;
+  forward: number;
+  airborne: boolean;
+}
+
+const smooth = (x: number, a: number, b: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
 export class Viewmodel {
   private holder: THREE.Group | null = null;
   private weaponId = "";
   private isMelee = false;
   private recoil = 0;
   private bob = 0;
-  private reload = 0;
-  private reloadAnim = 0; // 0..1 durante a recarga
   private raise = 0; // animação de sacar
   private muzzle: THREE.Mesh | null = null;
   private muzzleGlow: THREE.Sprite | null = null;
@@ -40,13 +60,35 @@ export class Viewmodel {
   private shellMat = new THREE.MeshStandardMaterial({ color: 0xc9a04a, metalness: 0.8, roughness: 0.35 });
   private shellGeo = new THREE.CylinderGeometry(0.006, 0.006, 0.022, 5);
   private base = { ...BASE };
+  private arms: ArmsRig | null = null;
+  private armKey = "";
+  private len = 0.9;
+  private pistol = false;
+  private sway = { x: 0, y: 0, vx: 0, vy: 0 };
+  private sprint = 0;
+  private lean = 0;
+  private landDip = 0;
+  private wasAirborne = false;
+  private reloadT = 0;
+  private reloadHand: THREE.Vector3 | null = null;
+  private magMesh: THREE.Group | null = null;
+  private smoke: { sprite: THREE.Sprite; vel: THREE.Vector3; born: number; life: number }[] = [];
+  private smokeMat: THREE.SpriteMaterial | null = null;
   hidden = false;
 
-  constructor(private camera: THREE.PerspectiveCamera, private scene: THREE.Scene) {}
+  /** `camera` é a câmera do viewmodel (passe próprio, FOV fixo, depth limpo): a arma nunca atravessa paredes. */
+  constructor(private worldCamera: THREE.PerspectiveCamera, private scene: THREE.Scene, private camera: THREE.PerspectiveCamera) {}
 
-  set(weaponId: string, team: Team) {
+  set(weaponId: string, team: Team, classId = "") {
     const id = team === "zombie" ? "claws" : weaponId;
-    if (this.holder && this.weaponId === id) return;
+    const key = `${id}|${classId}`;
+    if (this.holder && this.armKey === key) return;
+    this.armKey = key;
+    if (this.arms) {
+      this.camera.remove(this.arms.root);
+      disposeTree(this.arms.root);
+      this.arms = null;
+    }
     if (this.holder) {
       this.camera.remove(this.holder);
       disposeTree(this.holder);
@@ -60,59 +102,60 @@ export class Viewmodel {
     this.raise = 1;
 
     const holder = new THREE.Group();
-    const skin = new THREE.MeshStandardMaterial({ color: team === "zombie" ? 0x6f7a4a : 0x1b1d20, roughness: 0.8 });
-    const sleeve = new THREE.MeshStandardMaterial({ color: team === "zombie" ? 0x3d3a2a : 0x4a4636, roughness: 0.9 });
 
+    this.arms = makeArmsRig(classId, team === "zombie", team === "zombie" ? 0.9 : 0.6);
+    if (this.arms) {
+      // Ombros logo abaixo/atrás da câmera: o espaço do modelo tem o ombro a ~(0, 1,45, 0,065)·escala
+      this.arms.root.position.set(0.12, -0.42 - 1.45 * this.arms.scale, -0.2 - 0.065 * this.arms.scale);
+      this.camera.add(this.arms.root);
+    }
     if (id === "claws") {
-      for (const side of [-1, 1]) {
-        const hand = new THREE.Group();
-        const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.3), skin);
-        forearm.position.set(0, 0, 0.16);
-        hand.add(forearm, new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.05, 0.1), sleeve));
-        hand.add(makeWeaponModel("claws"));
-        hand.scale.setScalar(0.85);
-        hand.position.set(side * 0.2, -0.2, -0.46);
-        hand.rotation.set(0.2, side * -0.3, side * 0.12);
-        holder.add(hand);
+      if (this.arms) {
+        // Garras presas aos ossos da mão: seguem a pose do braço
+        for (const side of ["L", "R"] as const) {
+          const claws = makeWeaponModel("claws");
+          const holderClaw = new THREE.Group();
+          holderClaw.rotation.x = Math.PI / 2;
+          holderClaw.position.y = 0.075;
+          holderClaw.scale.setScalar(0.3);
+          holderClaw.add(claws);
+          const hand = this.arms.hand(side);
+          this.arms.root.updateMatrixWorld(true);
+          const ws = new THREE.Vector3();
+          hand.getWorldScale(ws);
+          const wrap = new THREE.Group();
+          wrap.scale.setScalar(1 / (ws.x || 1));
+          wrap.add(holderClaw);
+          hand.add(wrap);
+        }
       }
     } else {
       const gun = makeWeaponModel(id);
       holder.add(gun);
-      const mkHand = (x: number, y: number, z: number, ry = 0) => {
-        const h = new THREE.Group();
-        const fist = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.11), skin);
-        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.085, 0.22), sleeve);
-        arm.position.set(0.05, -0.07, 0.16);
-        arm.rotation.y = -0.25;
-        h.add(fist, arm);
-        h.position.set(x, y, z);
-        h.rotation.y = ry;
-        return h;
-      };
-      const pistol = id === "deagle" || id === "usp" || id === "glock";
+      this.pistol = id === "deagle" || id === "usp" || id === "glock";
       const loaded = getWeaponModel(id);
       const off = loaded ? VM_OFFSET[id] : undefined;
-      if (loaded) {
-        // GLB: origem na empunhadura; mão de apoio no handguard (um terço do cano à frente)
-        const len = loaded.box.max.z - loaded.box.min.z;
-        // Mãos do GLB: punho na empunhadura com o antebraço descendo para a direita (fora da tela),
-        // mão de apoio sob o handguard com o antebraço descendo para a esquerda
-        const mkArm = (x: number, y: number, z: number, yaw: number, pitch: number) => {
-          const arm = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.075, 0.3), sleeve);
-          arm.position.set(x, y, z);
-          arm.rotation.set(pitch, yaw, 0);
-          return arm;
-        };
-        const fist = (x: number, y: number, z: number) => {
-          const f = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.085, 0.09), skin);
-          f.position.set(x, y, z);
-          return f;
-        };
-        holder.add(fist(0.0, -0.05, 0.03), mkArm(0.06, -0.14, 0.16, -0.35, 0.45));
-        if (!pistol && id !== "knife") holder.add(fist(-0.01, -0.035, -len * 0.42), mkArm(-0.07, -0.13, -len * 0.42 + 0.14, 0.4, 0.5));
-        else if (pistol) holder.add(fist(-0.045, -0.06, 0.0), mkArm(-0.09, -0.16, 0.12, 0.35, 0.5));
-      } else {
-        holder.add(mkHand(0.02, -0.14, 0.18), mkHand(-0.05, -0.1, pistol ? 0.06 : id === "knife" ? 0.15 : -0.26, 0.3));
+      this.len = loaded ? loaded.box.max.z - loaded.box.min.z : 0.8;
+      if (id === "knife") this.arms?.hide("L", true);
+      this.magMesh = null;
+      if (this.arms && id !== "knife") {
+        // Carregador de mentira, preso à mão esquerda, que aparece só durante a recarga
+        const hand = this.arms.hand("L");
+        const mag = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.035, this.pistol ? 0.1 : 0.15, 0.07), new THREE.MeshStandardMaterial({ color: 0x23262b, metalness: 0.6, roughness: 0.5 }));
+        const top = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.012, 0.06), new THREE.MeshStandardMaterial({ color: 0xc9a04a, metalness: 0.8, roughness: 0.35 }));
+        top.position.y = this.pistol ? 0.056 : 0.081;
+        mag.add(body, top);
+        mag.position.set(0, 0.07, 0.0);
+        mag.visible = false;
+        const wrap = new THREE.Group();
+        this.arms.root.updateMatrixWorld(true);
+        const ws = new THREE.Vector3();
+        hand.getWorldScale(ws);
+        wrap.scale.setScalar(1 / (ws.x || 1));
+        wrap.add(mag);
+        hand.add(wrap);
+        this.magMesh = mag;
       }
       holder.scale.setScalar(off?.s ?? 0.5);
       this.base = off ? { x: off.x, y: off.y, z: off.z } : { ...BASE };
@@ -163,10 +206,11 @@ export class Viewmodel {
     }
     if (this.muzzleLight) this.muzzleLight.intensity = 8;
     if (!IS_MOBILE && weaponMeta(this.weaponId).shells) this.ejectShell();
+    if (!IS_MOBILE) this.puff();
   }
 
   startReload() {
-    this.reloadAnim = 1;
+    this.reloadT = 0.001; // a animação anda sozinha enquanto o servidor diz que está recarregando
   }
 
   switchAnim() {
@@ -188,7 +232,7 @@ export class Viewmodel {
     });
   }
 
-  update(dt: number, moving: boolean, reloading: boolean, alive: boolean, speed: number, zoomed: boolean) {
+  update(dt: number, f: VmFrame) {
     const nowMs = performance.now();
     this.shells = this.shells.filter((s) => {
       if (nowMs > s.until) { this.scene.remove(s.mesh); return false; }
@@ -198,40 +242,158 @@ export class Viewmodel {
       s.mesh.rotation.z += s.spin * 0.7 * dt;
       return true;
     });
+    this.smoke = this.smoke.filter((p) => {
+      const age = (nowMs - p.born) / p.life;
+      if (age >= 1) { this.scene.remove(p.sprite); p.sprite.material.dispose(); return false; }
+      p.sprite.position.addScaledVector(p.vel, dt);
+      p.vel.multiplyScalar(1 - dt * 1.5);
+      p.sprite.scale.setScalar(0.08 + age * 0.5);
+      p.sprite.material.opacity = 0.32 * (1 - age) * (1 - age);
+      return true;
+    });
 
     const vm = this.holder;
     if (!vm) return;
-    vm.visible = alive && !zoomed && !this.hidden;
+    vm.visible = f.alive && !f.zoomed && !this.hidden;
+    if (this.arms) this.arms.root.visible = vm.visible;
     if (!vm.visible) return;
-    this.bob += dt * (moving ? 6 + speed * 0.6 : 2);
+    const w = WEAPONS[this.weaponId];
+    const melee = this.isMelee;
+    const claws = this.weaponId === "claws";
+
+    this.bob += dt * (f.moving ? 5.5 + f.speed * 0.7 : 1.6);
     this.recoil = Math.max(0, this.recoil - dt * 7);
-    this.reload += ((reloading ? 1 : 0) - this.reload) * Math.min(1, dt * 8);
-    this.reloadAnim = Math.max(0, this.reloadAnim - dt * 0.9);
     this.raise = Math.max(0, this.raise - dt * 3.5);
 
-    const bobAmp = moving ? 0.018 + speed * 0.001 : 0.004;
-    const melee = this.isMelee;
-    const baseX = this.weaponId === "claws" ? 0 : this.base.x;
-    const baseY = this.weaponId === "claws" ? 0 : this.base.y;
-    const baseZ = this.weaponId === "claws" ? 0 : this.base.z;
-    const reloadDip = Math.sin(this.reloadAnim * Math.PI) * 0.22 + this.reload * 0.08;
+    // --- Recarga em fases (progresso 0..1 no tempo real da arma) ---
+    const reloadTime = Math.max(0.8, (w?.reloadTime ?? 2.2) * 0.92);
+    if (f.reloading && !melee) this.reloadT = Math.min(1, this.reloadT + dt / reloadTime);
+    else this.reloadT = 0;
+    const p = this.reloadT;
+    const tilt = smooth(p, 0, 0.15) * (1 - smooth(p, 0.82, 0.97));
+    this.updateReloadHand(p);
+
+    // --- Corrida: arma baixa e inclinada ---
+    const wantSprint = f.speed > 5.6 && f.forward > 0.5 && !f.reloading && !f.airborne ? 1 : 0;
+    this.sprint += (wantSprint - this.sprint) * Math.min(1, dt * 9);
+
+    // --- Inércia da mira: mola amortecida atrás do movimento do mouse ---
+    const rateY = Math.max(-14, Math.min(14, f.lookDYaw / Math.max(dt, 1e-3)));
+    const rateP = Math.max(-14, Math.min(14, f.lookDPitch / Math.max(dt, 1e-3)));
+    const sw = this.sway;
+    const k = 190, c = 19;
+    // Integração em passos pequenos: a mola é rígida e explodiria com dt grande (aba em segundo plano, GPU lenta)
+    const steps = Math.max(1, Math.min(8, Math.ceil(dt / (1 / 120))));
+    const h = Math.min(dt, 0.1) / steps;
+    for (let i = 0; i < steps; i++) {
+      sw.vx += (k * (-rateY * 0.0042 - sw.x) - c * sw.vx) * h;
+      sw.vy += (k * (rateP * 0.0042 - sw.y) - c * sw.vy) * h;
+      sw.x += sw.vx * h;
+      sw.y += sw.vy * h;
+    }
+    sw.x = Math.max(-0.06, Math.min(0.06, sw.x));
+    sw.y = Math.max(-0.06, Math.min(0.06, sw.y));
+
+    // --- Inclinação ao andar de lado e impacto ao pousar ---
+    this.lean += (-f.strafe * 0.05 - this.lean) * Math.min(1, dt * 8);
+    if (this.wasAirborne && !f.airborne) this.landDip = 1;
+    this.wasAirborne = f.airborne;
+    this.landDip = Math.max(0, this.landDip - dt * 5);
+    const airLift = f.airborne ? 0.018 : 0;
+
+    const speedK = Math.min(1, f.speed / 6.6);
+    const bobAmp = f.moving ? 0.006 + speedK * 0.016 : 0.0035;
+    const bx = Math.sin(this.bob) * bobAmp * (1 + this.sprint);
+    const by = Math.abs(Math.cos(this.bob)) * bobAmp * 0.9 * (1 + this.sprint * 0.5);
+    const baseX = claws ? 0 : this.base.x;
+    const baseY = claws ? 0 : this.base.y;
+    const baseZ = claws ? 0 : this.base.z;
+    const reloadDip = tilt * 0.05;
     const raiseDip = this.raise * this.raise * 0.35;
+    const sp = this.sprint;
     vm.position.set(
-      baseX + Math.sin(this.bob) * bobAmp,
-      baseY + Math.abs(Math.cos(this.bob)) * bobAmp * 0.8 - reloadDip - raiseDip,
-      baseZ + (melee ? -this.recoil * 0.3 : this.recoil * 0.07),
+      baseX + bx + sw.x - sp * 0.07 + tilt * -0.03,
+      baseY + by + sw.y - this.landDip * 0.04 + airLift - reloadDip - raiseDip - sp * 0.06,
+      baseZ + (melee ? -this.recoil * 0.3 : this.recoil * 0.07) + sp * 0.03,
     );
-    const baseRy = melee ? (this.weaponId === "knife" ? (VM_OFFSET.knife.ry) : 0) : (VM_OFFSET[this.weaponId] && getWeaponModel(this.weaponId) ? VM_OFFSET[this.weaponId].ry : 0.06);
+    const baseRy = melee ? (this.weaponId === "knife" ? VM_OFFSET.knife.ry : 0) : VM_OFFSET[this.weaponId] && getWeaponModel(this.weaponId) ? VM_OFFSET[this.weaponId].ry : 0.06;
     vm.rotation.set(
-      (melee ? 0 : 0.03) + this.recoil * (melee ? -0.35 : 0.22) + Math.sin(this.reloadAnim * Math.PI) * 0.7 + raiseDip * 1.5,
-      baseRy + Math.sin(this.reloadAnim * Math.PI) * 0.45,
-      this.recoil * 0.05 + Math.sin(this.reloadAnim * Math.PI) * 0.3,
+      (melee ? 0 : 0.03) + this.recoil * (melee ? -0.35 : 0.22) + tilt * 0.45 + raiseDip * 1.5 + sw.y * 1.6 - sp * 0.3 + this.landDip * 0.06,
+      baseRy + tilt * 0.35 - sw.x * 1.6 + sp * 0.6,
+      this.recoil * 0.05 + tilt * 0.35 + this.lean + sp * 0.28 + sw.x * 1.2 + Math.sin(this.bob * 0.5) * bobAmp * 0.8,
     );
+
+    this.poseArms();
 
     if (this.muzzle && this.muzzle.visible && nowMs > this.muzzleUntil) {
       this.muzzle.visible = false;
       if (this.muzzleGlow) this.muzzleGlow.visible = false;
       if (this.muzzleLight) this.muzzleLight.intensity = 0;
     }
+  }
+
+  /** Mão esquerda: alça → boca do carregador → solta o velho → pega o novo → encaixa → volta. */
+  private updateReloadHand(p: number) {
+    if (p <= 0 || this.isMelee) {
+      this.reloadHand = null;
+      if (this.magMesh) this.magMesh.visible = false;
+      return;
+    }
+    const mag = new THREE.Vector3(0, -0.13, -0.05);
+    const drop = new THREE.Vector3(-0.08, -0.5, 0.0);
+    const fresh = new THREE.Vector3(-0.06, -0.34, -0.07);
+    const home = this.pistol ? new THREE.Vector3(-0.025, -0.075, 0.03) : new THREE.Vector3(0, -0.03, -this.len * 0.28);
+    const out = new THREE.Vector3();
+    if (p < 0.18) out.lerpVectors(home, mag, smooth(p, 0, 0.18));
+    else if (p < 0.38) out.lerpVectors(mag, drop, smooth(p, 0.18, 0.38));
+    else if (p < 0.52) out.lerpVectors(drop, fresh, smooth(p, 0.38, 0.52));
+    else if (p < 0.74) out.lerpVectors(fresh, mag, smooth(p, 0.52, 0.74));
+    else out.lerpVectors(mag, home, smooth(p, 0.74, 0.95));
+    this.reloadHand = out;
+    if (this.magMesh) this.magMesh.visible = (p > 0.24 && p < 0.4) || (p > 0.44 && p < 0.72);
+  }
+
+  /** Fumaça subindo do cano depois do tiro (no mundo, para não acompanhar a mão). */
+  private puff() {
+    if (!this.muzzle || !this.holder || this.smoke.length > 10) return;
+    this.smokeMat ??= new THREE.SpriteMaterial({ map: tex("smoke", smokeTexture), color: 0xb9b2a4, transparent: true, depthWrite: false, opacity: 0.3 });
+    const pos = this.muzzle.getWorldPosition(new THREE.Vector3()).applyMatrix4(this.worldCamera.matrixWorld);
+    const sprite = new THREE.Sprite(this.smokeMat.clone());
+    sprite.position.copy(pos);
+    this.scene.add(sprite);
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.worldCamera.quaternion);
+    this.smoke.push({ sprite, vel: fwd.multiplyScalar(0.5).add(new THREE.Vector3((Math.random() - 0.5) * 0.15, 0.3, (Math.random() - 0.5) * 0.15)), born: performance.now(), life: 650 + Math.random() * 250 });
+  }
+
+  /** Leva as mãos do soldado até as empunhaduras da arma (ou às garras do zumbi) a cada frame. */
+  private poseArms() {
+    const arms = this.arms;
+    const holder = this.holder;
+    if (!arms || !holder) return;
+    holder.updateMatrix();
+    const q = holder.quaternion;
+    const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+    const toCam = (p: THREE.Vector3) => p.applyMatrix4(holder.matrix);
+    const dir = (d: THREE.Vector3) => d.applyQuaternion(q);
+    if (this.weaponId === "claws") {
+      const t = this.bob;
+      for (const side of ["L", "R"] as const) {
+        const k = side === "R" ? 1 : -1;
+        // Golpe: a mão avança e cruza o campo de visão
+        const sw = this.recoil;
+        const target = v(k * (0.2 - sw * 0.18), -0.2 + sw * 0.06 + Math.sin(t + k) * 0.01, -0.46 - sw * 0.26);
+        arms.reach(side, target, v(k * -0.1, -0.1, -1), v(k * -0.3, -1, 0), v(k * 0.6, -1, 0.2), 0.55);
+      }
+      return;
+    }
+    const grip = this.pistol;
+    arms.reach("R", toCam(v(0.0, -0.045, 0.035)), dir(v(0, -0.3, -0.95)), dir(v(-1, 0, 0)), dir(v(0.6, -1, 0.25)), 1.15);
+    if (this.weaponId === "knife") return;
+    const rl = this.reloadHand;
+    if (rl) {
+      // Durante a recarga a mão aberta busca o carregador (curl menor)
+      arms.reach("L", toCam(rl.clone()), dir(v(0.1, 0.05, -1)), dir(v(0, 1, 0)), dir(v(-0.5, -1, 0.25)), 0.45);
+    } else if (grip) arms.reach("L", toCam(v(-0.025, -0.075, 0.03)), dir(v(0, -0.55, -0.8)), dir(v(1, 0, 0)), dir(v(-0.6, -1, 0.25)), 1.0);
+    else arms.reach("L", toCam(v(0.0, -0.03, -this.len * 0.28)), dir(v(0, 0.05, -1)), dir(v(0, 1, 0)), dir(v(-0.5, -1, 0.25)), 0.75);
   }
 }

@@ -11,9 +11,17 @@ Abra o link, digite seu nome e entre. O servidor roda 20 ticks/s com
 autoridade total; bots (com pathfinding A* no mapa) preenchem até 8 jogadores.
 
 - **WASD** mover · **Mouse** mirar · **Clique** atirar · **Botão direito** zoom (AWP)
-- **Ctrl/C** agachar · **Espaço** pular · **R** recarregar · **E** habilidade
+- **Ctrl/C** agachar · **Espaço** pular · **R** recarregar · **E** habilidade · **F** lanterna
 - **1/2/3** ou roda do mouse trocar arma · **B** menu de compra · **Tab** placar · **Enter** chat
 - Celular: analógico esquerdo move, arrastar na direita mira, botões de tiro/pulo/agachar/recarga/habilidade/troca
+
+### Jogar online
+
+Na tela inicial: **JOGAR AGORA** entra na sala pública mais cheia (abre outra se lotar),
+a lista mostra as salas públicas, **+ SALA PRIVADA** gera um código de 5 letras e o
+link `?sala=CODIGO` (clique no código no HUD para copiar). Cada sala é uma partida
+independente (rounds, bots e física próprios, até 10 humanos). O HUD mostra o ping;
+se a conexão cair o cliente reconecta sozinho na mesma sala. Hospedagem: ver `docs/ONLINE.md`.
 
 ### Jogar no celular (rede local)
 
@@ -24,6 +32,20 @@ npm run play      # build + servidor; imprime http://<IP-do-PC>:8080
 Abra o endereço impresso no navegador do celular (mesma rede Wi‑Fi, tela em
 paisagem). O `node.exe` precisa estar liberado no firewall do Windows para
 conexões de entrada.
+
+## HUD, mapa e viewmodel (visual)
+
+- **HUD v2**: layout em painéis chanfrados (fonte Rajdhani), radar circular rotativo (aliados sempre, inimigos por proximidade),
+  bússola, placar de round com contagem de zumbis/humanos, vida/colete em barras segmentadas com "fantasma" de dano,
+  anel de habilidade, munição com pips do carregador, aviso de recarga e slots com nome da arma.
+- **Mapa à noite**: texturas PBR (Poly Haven, CC0), céu estrelado com lua (HDRI `moonlit_golf` convertido) e luar com sombras;
+  72 lanternas de parede (laranja, holofotes frios nos spawns humanos, vermelho/verde tóxico nos zumbis), fogueiras em barris,
+  letreiros de néon e brilho/bloom. Um pool fixo de PointLights reais segue as fontes mais próximas (o número de luzes do shader
+  nunca muda). **F** liga/desliga a lanterna do humano. Props 3D (barris, pneus, sacos de cimento, galões) ao pé das paredes. Desktop: AO (GTAO) + bloom leve e MSAA;
+  `?fx=0` desliga o pós-processamento (mobile já vem desligado).
+- **Viewmodel**: passe de render próprio (FOV 62, depth limpo — a arma não atravessa parede), inércia por mola amortecida ao
+  mover o mouse, inclinação ao andar de lado, pose de corrida, impacto ao pousar, fumaça do cano e recarga em fases
+  (mão esquerda troca o carregador no tempo real da arma).
 
 ## Arsenal (CS 1.6)
 
@@ -47,6 +69,11 @@ andando/pulando e melhora agachado; recuo acumula por rajada.
   gelo, pipe bomb, colete, instinto/regeneração/fúria/investida zumbi.
 - **Economia AP**: começa com 1000; kill +3AP (zumbi)/+2AP (humano), dano 1/500,
   infecção +1, drop físico de ammo pack ao matar zumbi, vitória +3.
+- **Movimento estilo Source/CS**: fricção, aceleração no ar (air-strafe), teto anti-bhop 1,2×, coyote time,
+  pulo só na borda de subida. Servidor e cliente usam o mesmo `stepMovement`.
+- **Física**: granadas quicam/rolam em paredes e caixas (`src/shared/bounce.ts`), cuspe do Spitter explode no impacto;
+  no cliente cartuchos de latão e destroços de explosão são corpos rígidos que colidem com o mapa, e cadáveres
+  deslizam/tombam na direção do golpe.
 - **Knockback por arma** com multiplicador por classe (Tank/Nemesis quase imunes).
 - **"A Praga" narra**: mensagens em 1ª pessoa com humor brasileiro nos eventos.
 - **Killstreaks**: 3 IMPAREÁVEL, 5 DOMINADOR, 7 DEUS DO ZP.
@@ -81,4 +108,12 @@ Imagem `ghcr.io/juninmd/a-plaga:latest` via GitHub Actions; manifests no repo
   [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) e o site distribui os packs sob a
   [Quaternius Asset License](https://quaternius.com/license.html): uso livre em projetos pessoais e
   comerciais, sem obrigação de crédito, sem redistribuir os modelos como produto avulso.
-- Texturas, mapa, personagens, sons e demais assets são procedurais (gerados em código).
+- Personagem (humanos e zumbis): **Soldier.glb** (rig Mixamo "Vanguard") dos exemplos do
+  [three.js](https://github.com/mrdoob/three.js/tree/dev/examples/models/gltf), em `public/models/characters/`.
+  Assets Mixamo são gratuitos para uso em jogos, mas não podem ser redistribuídos avulsos — para um lançamento
+  comercial troque por um personagem próprio/licenciado (basta manter os nomes dos ossos `mixamorig*`).
+  As skins por classe são tintas/materiais aplicados sobre o mesmo modelo (`src/client/render/models/characters.ts`).
+- Texturas PBR, HDRI do céu e props 3D do mapa: [Poly Haven](https://polyhaven.com) (CC0) — `public/textures`, `public/env/sky_night.jpg` (de `moonlit_golf`), `public/models/props`.
+- Sons e demais assets são procedurais (gerados em código). Pesquisa de HUD/mapa/viewmodel: `docs/PESQUISA-VISUAL.md`.
+- Pesquisa de frameworks/assets: `docs/PESQUISA.md`. Visualizadores (com `npm run dev`): `/dev-viewer.html` (skins) e `/dev-viewmodel.html?w=m4a1&c=assault` (primeira pessoa; `team=zombie&w=claws` para zumbi).
+- Primeira pessoa: braços e luvas do mesmo soldado (malha só dos braços, IK de 2 ossos até as empunhaduras da arma); zumbis têm braços rasgados com garras. Zumbis em 3ª pessoa: cabeça apodrecida com olhos brilhantes, sangue/necrose por shader e acessórios por classe (espinhos do Tank, bolsa de bile do Boomer, chifres do Nemesis…).

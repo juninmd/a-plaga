@@ -45,6 +45,8 @@ export interface Entity {
   alive: boolean;
   onGround: boolean;
   crouching: boolean;
+  jumpWas: boolean;
+  airTime: number;
   speedMult: number;
   gravityMult: number;
   knockbackMult: number;
@@ -123,6 +125,8 @@ export function createEntity(id: number, name: string, cls: ClassDef, team: "hum
     alive: true,
     onGround: true,
     crouching: false,
+    jumpWas: false,
+    airTime: 0,
     speedMult: cls.speed,
     gravityMult: cls.gravity,
     knockbackMult: cls.knockback,
@@ -250,8 +254,12 @@ export function moveEntity(e: Entity, dt: number) {
     buffSpeed: e.buffSpeedUntil > now() ? e.buffSpeed : 1,
     gravityMult: e.gravityMult,
     scale: e.scale,
+    jumpWas: e.jumpWas,
+    airTime: e.airTime,
   };
   stepMovement(mover, input, dt);
+  e.jumpWas = mover.jumpWas ?? false;
+  e.airTime = mover.airTime ?? 0;
   e.onGround = mover.onGround;
   e.crouching = mover.crouching;
 }

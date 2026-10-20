@@ -1,4 +1,5 @@
 import { BALANCE, ITEM_INDEX } from "../shared/balance.js";
+import { stepBody, type BounceBody } from "../shared/bounce.js";
 import { MAP } from "../shared/map.js";
 import type { Vec3 } from "../shared/protocol.js";
 import { WEAPONS } from "../shared/weapons.js";
@@ -167,19 +168,28 @@ function throwGrenade(g: Game, e: Entity, kind: string) {
 
 // ===== Projéteis =====
 
+/** Cuspe explode no primeiro impacto; granadas quicam e rolam até o fim do pavio (ttl). */
+const IMPACT_FUSED = new Set(["acid"]);
+const PROJECTILE_BODY: Record<string, Partial<BounceBody>> = {
+  acid: { radius: 0.16, restitution: 0, friction: 0.5 },
+  fire_grenade: { restitution: 0.5, friction: 0.15 },
+  frost_grenade: { restitution: 0.4, friction: 0.2 },
+  pipebomb: { radius: 0.14, restitution: 0.3, friction: 0.35, rolling: 4 },
+};
+
 export function updateProjectiles(g: Game, dt: number) {
   const dead: Projectile[] = [];
   for (const pr of g.projectiles) {
     pr.ttl -= dt;
-    pr.vel.y -= BALANCE.gravity * 0.6 * dt;
-    pr.pos.x += pr.vel.x * dt;
-    pr.pos.y += pr.vel.y * dt;
-    pr.pos.z += pr.vel.z * dt;
-    if (pr.pos.y < 0) {
-      pr.pos.y = 0;
-      pr.vel.y = 0;
+    const body: BounceBody = { pos: pr.pos, vel: pr.vel, radius: 0.12, restitution: 0.45, friction: 0.18, rolling: 2.6, ...PROJECTILE_BODY[pr.kind] };
+    const hit = stepBody(body, dt, MAP.boxes, BALANCE.gravity * 0.6);
+    if (IMPACT_FUSED.has(pr.kind) && hit.impact > 0) {
+      explodeProjectile(g, pr);
+      dead.push(pr);
+      continue;
     }
-    if (pr.ttl <= 0 || pr.pos.y <= 0.01) {
+    if (hit.impact > 2.5) g.fx.push({ kind: "bounce", pos: { ...pr.pos }, color: 0xffffff, value: Math.min(1, hit.impact / 12) });
+    if (pr.ttl <= 0) {
       explodeProjectile(g, pr);
       dead.push(pr);
     }

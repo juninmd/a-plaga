@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { camoTexture, kevlarTexture, tex } from "../textures";
 import { makeWeaponModel } from "./weapons";
 import { getWeaponModel } from "./gltf";
+import type { CharacterRig } from "./characters";
 
 /** Peças animáveis de um boneco (humano ou zumbi). */
 export interface BuiltModel {
@@ -18,6 +19,8 @@ export interface BuiltModel {
   fadeable: THREE.Material[];
   /** Postura de descanso dos braços (rotation.x). */
   armRest: { l: number; r: number };
+  /** Presente quando o boneco é um personagem GLB animado por clipes (e não o procedural por peças). */
+  rig?: CharacterRig;
 }
 
 const skinMat = () => new THREE.MeshStandardMaterial({ color: 0xd1a37c, roughness: 0.7 });

@@ -1,5 +1,10 @@
 import * as THREE from "three";
 import type { PickupState, PlayerState, ProjectileState, Team } from "../../shared/protocol";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { Effects } from "./effects";
 import { PlayerRegistry } from "./players";
 import { IS_MOBILE } from "./textures";
@@ -9,6 +14,7 @@ import { buildWorld, type World } from "./world";
 export { IS_MOBILE };
 
 const DEFAULT_FOV = 75;
+const VM_FOV = 62;
 
 export interface FrameState {
   moving: boolean;
@@ -16,6 +22,11 @@ export interface FrameState {
   alive: boolean;
   crouching: boolean;
   speed: number;
+  lookDYaw: number;
+  lookDPitch: number;
+  strafe: number;
+  forward: number;
+  airborne: boolean;
 }
 
 // ===== Composição: mundo + jogadores + viewmodel + efeitos =====
@@ -28,6 +39,14 @@ export class Renderer {
   private world: World;
   private playersReg: PlayerRegistry;
   private vm: Viewmodel;
+  /** Passe próprio do viewmodel: FOV fixo e depth limpo — a arma nunca entra na parede. */
+  private vmScene = new THREE.Scene();
+  private vmCamera: THREE.PerspectiveCamera;
+  /** Pós-processamento (AO + bloom) só no desktop; `?fx=0` desliga. */
+  private composer: EffectComposer | null = null;
+  /** Lanterna presa à câmera (luz fixa no shader: só muda a intensidade). */
+  private flashlight: THREE.SpotLight;
+  private flashlightOn = false;
   private fx: Effects;
   private pickups = new Map<number, THREE.Mesh>();
   private projectiles = new Map<number, THREE.Group>();
@@ -52,27 +71,65 @@ export class Renderer {
     this.renderer.shadowMap.enabled = !IS_MOBILE;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.4;
     document.getElementById("app")!.appendChild(this.renderer.domElement);
 
     this.camera = new THREE.PerspectiveCamera(DEFAULT_FOV, window.innerWidth / window.innerHeight, 0.05, 400);
     this.camera.rotation.order = "YXZ";
     // A câmera entra na cena para que o viewmodel (filho dela) seja renderizado
     this.scene.add(this.camera);
-    const vmLight = new THREE.PointLight(0xffe2bb, 2.0, 3.5);
+    this.flashlight = new THREE.SpotLight(0xe6edff, 0, 42, 0.46, 0.6, 1.35);
+    this.flashlight.position.set(0.14, -0.12, 0);
+    this.flashlight.target.position.set(0.02, -0.05, -6);
+    this.camera.add(this.flashlight, this.flashlight.target);
+    this.vmCamera = new THREE.PerspectiveCamera(VM_FOV, window.innerWidth / window.innerHeight, 0.02, 10);
+    this.vmScene.add(this.vmCamera);
+    // Luz própria do viewmodel (luzes não cruzam cenas): sol quente + céu + bounce do chão
+    this.vmScene.add(new THREE.HemisphereLight(0xfff0d0, 0x7a6340, 1.6));
+    const vmSun = new THREE.DirectionalLight(0xffe2bb, 2.2);
+    vmSun.position.set(0.6, 1, 0.5);
+    this.vmScene.add(vmSun);
+    const vmLight = new THREE.PointLight(0xffe2bb, 1.4, 3.5);
     vmLight.position.set(0.3, 0.2, 0.1);
-    this.camera.add(vmLight);
+    this.vmCamera.add(vmLight);
+    this.renderer.autoClear = false;
 
-    this.world = buildWorld(this.scene);
+    this.world = buildWorld(this.scene, this.renderer);
     this.playersReg = new PlayerRegistry(this.scene, this.clock);
-    this.vm = new Viewmodel(this.camera, this.scene);
+    this.vm = new Viewmodel(this.camera, this.scene, this.vmCamera);
+    this.setupPost();
     this.fx = new Effects(this.scene);
 
     window.addEventListener("resize", () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
+      this.vmCamera.aspect = this.camera.aspect;
+      this.vmCamera.updateProjectionMatrix();
       this.renderer.setSize(window.innerWidth, window.innerHeight);
+      this.composer?.setSize(window.innerWidth, window.innerHeight);
     });
+  }
+
+  private setupPost() {
+    const off = new URLSearchParams(location.search).get("fx") === "0";
+    if (IS_MOBILE || off) return;
+    try {
+      const w = window.innerWidth, h = window.innerHeight;
+      const target = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 4 });
+      const composer = new EffectComposer(this.renderer, target);
+      composer.addPass(new RenderPass(this.scene, this.camera));
+      const ao = new GTAOPass(this.scene, this.camera, w, h);
+      ao.output = GTAOPass.OUTPUT.Default;
+      ao.updateGtaoMaterial({ radius: 0.7, distanceExponent: 1.5, thickness: 1.2, scale: 1.0, samples: 12, distanceFallOff: 1.0, screenSpaceRadius: false });
+      ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 8 });
+      composer.addPass(ao);
+      composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.55, 0.55, 1.0));
+      composer.addPass(new OutputPass());
+      this.composer = composer;
+    } catch (err) {
+      console.warn("pós-processamento indisponível", err);
+      this.composer = null;
+    }
   }
 
   // ===== Jogadores =====
@@ -89,6 +146,12 @@ export class Renderer {
   meleeSwing(id: number) {
     this.playersReg.meleeSwing(id);
   }
+  playerShot(id: number) {
+    this.playersReg.shot(id);
+  }
+  corpseImpulse(id: number, dirX: number, dirZ: number, strength: number) {
+    this.playersReg.corpseImpulse(id, dirX, dirZ, strength);
+  }
   setPlayerPose(id: number, x: number, y: number, z: number, yaw: number, pitch: number) {
     this.playersReg.setPose(id, x, y, z, yaw, pitch);
   }
@@ -99,8 +162,8 @@ export class Renderer {
 
   // ===== Viewmodel =====
 
-  setViewmodel(weaponId: string, team: Team) {
-    this.vm.set(weaponId, team);
+  setViewmodel(weaponId: string, team: Team, classId = "") {
+    this.vm.set(weaponId, team, classId);
   }
   viewmodelFire() {
     this.vm.fire();
@@ -125,6 +188,9 @@ export class Renderer {
   shake(intensity: number) {
     this.fx.shake(intensity);
   }
+  setFlashlight(on: boolean) {
+    this.flashlightOn = on;
+  }
   setZoom(fov: number | null) {
     this.targetFov = fov ?? DEFAULT_FOV;
     this.zoomed = fov != null;
@@ -143,6 +209,25 @@ export class Renderer {
   }
   explosion(pos: THREE.Vector3, color: number, radius: number) {
     this.fx.explosion(pos, color, radius);
+  }
+  /** Ejeta um cartucho: da câmera (arma local) ou de `from` na direção do tiro (outros jogadores). */
+  casing(from: THREE.Vector3, dir: THREE.Vector3, local: boolean) {
+    const up = new THREE.Vector3(0, 1, 0);
+    if (local) {
+      this.camera.updateMatrixWorld();
+      const m = this.camera.matrixWorld;
+      const right = new THREE.Vector3().setFromMatrixColumn(m, 0).normalize();
+      const camUp = new THREE.Vector3().setFromMatrixColumn(m, 1).normalize();
+      const fwd = new THREE.Vector3().setFromMatrixColumn(m, 2).normalize().negate();
+      const pos = this.camera.position.clone().addScaledVector(right, 0.2).addScaledVector(camUp, -0.13).addScaledVector(fwd, 0.45);
+      this.fx.casing(pos, right, camUp, 1);
+    } else {
+      const right = new THREE.Vector3().crossVectors(dir, up).normalize();
+      this.fx.casing(from.clone().addScaledVector(right, 0.1), right, up, 1.3);
+    }
+  }
+  onCasingBounce(cb: (pos: THREE.Vector3, impact: number) => void) {
+    this.fx.onCasingBounce = cb;
   }
 
   damageNumber(pos: THREE.Vector3, value: number, headshot: boolean) {
@@ -225,8 +310,21 @@ export class Renderer {
   frame(state: FrameState) {
     const dt = Math.min(0.1, this.clock.getDelta());
     this.fx.update(dt);
+    const li = this.flashlight.intensity;
+    this.flashlight.intensity = li + ((this.flashlightOn ? 55 : 0) - li) * Math.min(1, dt * 18);
     this.playersReg.update(dt);
-    this.vm.update(dt, state.moving, state.reloading, state.alive, state.speed, this.zoomed);
+    this.vm.update(dt, {
+      moving: state.moving,
+      reloading: state.reloading,
+      alive: state.alive,
+      speed: state.speed,
+      zoomed: this.zoomed,
+      lookDYaw: state.lookDYaw,
+      lookDPitch: state.lookDPitch,
+      strafe: state.strafe,
+      forward: state.forward,
+      airborne: state.airborne,
+    });
     this.world.update(dt, this.camPos);
 
     // Câmera: posição + punch/shake
@@ -237,7 +335,14 @@ export class Renderer {
       this.camera.fov += (this.targetFov - this.camera.fov) * Math.min(1, dt * 14);
       this.camera.updateProjectionMatrix();
     }
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer) {
+      this.composer.render(dt);
+    } else {
+      this.renderer.clear();
+      this.renderer.render(this.scene, this.camera);
+    }
+    this.renderer.clearDepth();
+    this.renderer.render(this.vmScene, this.vmCamera);
   }
 }
 

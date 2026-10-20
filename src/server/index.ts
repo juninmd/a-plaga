@@ -1,17 +1,17 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { Game } from "./game.js";
+import { Lobby, MAIN_ROOM, type Room } from "./lobby.js";
 import { botBrain } from "./bots.js";
 import { BALANCE } from "../shared/balance.js";
-import type { ClientMsg, InputState } from "../shared/protocol.js";
+import type { ClientMsg, InputState, JoinPayload } from "../shared/protocol.js";
 
 const PORT = Number(process.env.PORT ?? 8080);
 const DIST = join(import.meta.dirname, "..", "..", "dist");
 
-const game = new Game(botBrain);
+const lobby = new Lobby(botBrain);
 
 // ===== HTTP estático =====
 
@@ -33,7 +33,13 @@ const server = createServer(async (req, res) => {
     if (path === "/") path = "/index.html";
     if (path === "/health") {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ ok: true, players: game.players.length, mode: game.round.modeLabel }));
+      const rooms = lobby.all();
+      res.end(JSON.stringify({ ok: true, rooms: rooms.length, players: rooms.reduce((n, r) => n + r.humans, 0) }));
+      return;
+    }
+    if (path === "/rooms") {
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(JSON.stringify(lobby.list()));
       return;
     }
     const file = normalize(join(DIST, path));
@@ -67,13 +73,68 @@ const server = createServer(async (req, res) => {
 
 // ===== WebSocket =====
 
-const wss = new WebSocketServer({ server, path: "/ws" });
+const MAX_MSG_BYTES = 4096;
+const INPUT_PER_SEC = 90;
+const CHAT_MIN_GAP_MS = 600;
+const HEARTBEAT_MS = 15_000;
 
-wss.on("connection", (ws: WebSocket) => {
+const wss = new WebSocketServer({ server, path: "/ws", maxPayload: MAX_MSG_BYTES });
+
+interface Conn extends WebSocket {
+  isAlive?: boolean;
+}
+
+const MAX_CONN_PER_IP = Number(process.env.MAX_CONN_PER_IP ?? 8);
+const MAX_CONN_TOTAL = Number(process.env.MAX_CONN_TOTAL ?? 300);
+const connsByIp = new Map<string, number>();
+
+/** IP real do cliente: atrás de proxy/ingress (Traefik, Fly, Render) vem em X-Forwarded-For. */
+function clientIp(req: IncomingMessage): string {
+  const fwd = req.headers["x-forwarded-for"];
+  const first = (Array.isArray(fwd) ? fwd[0] : fwd)?.split(",")[0]?.trim();
+  return first || req.socket.remoteAddress || "?";
+}
+
+wss.on("connection", (ws: Conn, req: IncomingMessage) => {
+  // Limite por IP e total: um cliente (ou script) não derruba o servidor abrindo milhares de sockets
+  const ip = clientIp(req);
+  const open = connsByIp.get(ip) ?? 0;
+  if (open >= MAX_CONN_PER_IP || wss.clients.size > MAX_CONN_TOTAL) {
+    ws.close(1013, "too many connections");
+    return;
+  }
+  connsByIp.set(ip, open + 1);
+  ws.on("close", () => {
+    const n = (connsByIp.get(ip) ?? 1) - 1;
+    if (n <= 0) connsByIp.delete(ip);
+    else connsByIp.set(ip, n);
+  });
+
   let playerId = -1;
+  let room: Room | null = null;
   let joined = false;
+  let windowStart = Date.now();
+  let windowCount = 0;
+  let lastChat = 0;
+  ws.isAlive = true;
+  ws.on("pong", () => (ws.isAlive = true));
+
+  const send = (m: unknown) => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m));
+  };
+
+  /** Token bucket simples: cliente malicioso não consegue afogar a sala com mensagens. */
+  const allowed = (): boolean => {
+    const t = Date.now();
+    if (t - windowStart >= 1000) {
+      windowStart = t;
+      windowCount = 0;
+    }
+    return ++windowCount <= INPUT_PER_SEC;
+  };
 
   ws.on("message", (raw) => {
+    if (!allowed()) return;
     let msg: ClientMsg;
     try {
       msg = JSON.parse(raw.toString()) as ClientMsg;
@@ -88,89 +149,106 @@ wss.on("connection", (ws: WebSocket) => {
     }
   });
 
+  const join = (d: Partial<JoinPayload> | undefined) => {
+    const rawName = d?.name;
+    const name = (typeof rawName === "string" ? rawName : "").trim().slice(0, 24).replace(/[<>]/g, "") || "Jogador";
+    let target: Room | null | undefined;
+    if (d?.create && typeof d.create === "object") {
+      target = lobby.createRoom(String(d.create.name ?? ""), d.create.isPublic === true);
+      if (!target) return send({ t: "error", d: "Limite de salas atingido, tente mais tarde." });
+    } else if (typeof d?.room === "string" && d.room.trim()) {
+      target = lobby.get(d.room);
+      if (!target) return send({ t: "error", d: `Sala ${d.room.trim().toUpperCase().slice(0, 8)} não existe.` });
+    } else {
+      target = lobby.quickPlay();
+      if (!target) return send({ t: "error", d: "Sem salas disponíveis." });
+    }
+    if (target.full) return send({ t: "error", d: "Sala cheia." });
+    joined = true;
+    room = target;
+    const r = target;
+    r.exec((g) => {
+      r.makeRoomForHuman();
+      playerId = g.addPlayer(name, { send });
+      send({ t: "welcome", d: { id: playerId, snapshot: g.snapshot(), room: r.info() } });
+      // Quem entra no meio do round precisa ver o AP inicial sem esperar o próximo evento
+      send({ t: "shop", d: { ap: g.getAp(playerId), owned: [] } });
+    });
+  };
+
   const dispatch = (msg: ClientMsg) => {
     if (!msg || typeof msg !== "object" || typeof msg.t !== "string") return;
     const d = (msg as { d?: unknown }).d;
+    if (msg.t === "ping") {
+      const c = Number((d as { c?: unknown } | undefined)?.c);
+      if (Number.isFinite(c)) send({ t: "pong", d: { c } });
+      return;
+    }
     if (msg.t === "join") {
       if (joined) return;
-      joined = true;
-      const rawName = (d as { name?: unknown } | undefined)?.name;
-      const name = (typeof rawName === "string" ? rawName : "").trim().slice(0, 24).replace(/[<>]/g, "") || "Jogador";
-      const send = (m: unknown) => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m));
-      };
-      playerId = game.addPlayer(name, { send });
-      ws.send(
-        JSON.stringify({
-          t: "welcome",
-          d: { id: playerId, snapshot: game.snapshot() },
-        }),
-      );
-      // Quem entra no meio do round precisa ver o AP inicial sem esperar o próximo evento
-      send({ t: "shop", d: { ap: game.getAp(playerId), owned: [] } });
-    } else if (msg.t === "input") {
-      if (!joined) return;
-      if (d && typeof d === "object") game.handleInput(playerId, d as InputState);
-    } else if (msg.t === "buy") {
-      if (!joined) return;
-      const e = game.players.find((p) => p.id === playerId);
-      if (e) game.buyItem(e, String((d as { itemId?: unknown } | undefined)?.itemId ?? ""));
-    } else if (msg.t === "buyWeapon") {
-      if (!joined) return;
-      game.handleBuyWeapon(playerId, String(msg.d?.weaponId ?? ""));
-    } else if (msg.t === "switch") {
-      if (!joined) return;
-      const slot = Number(msg.d?.slot);
-      if (slot === 1 || slot === 2 || slot === 3) game.handleSwitch(playerId, slot);
-    } else if (msg.t === "reload") {
-      if (!joined) return;
-      game.handleReload(playerId);
-    } else if (msg.t === "selectClass") {
-      if (!joined) return;
-      game.handleSelectClass(playerId, String((d as { classId?: unknown } | undefined)?.classId ?? ""));
-    } else if (msg.t === "chat") {
-      if (!joined) return;
-      const text = (d as { text?: unknown } | undefined)?.text;
-      if (typeof text === "string") game.handleChat(playerId, text);
+      join(d as Partial<JoinPayload> | undefined);
+      return;
     }
+    if (!joined || !room) return;
+    room.exec((game) => {
+      if (msg.t === "input") {
+        if (d && typeof d === "object") game.handleInput(playerId, d as InputState);
+      } else if (msg.t === "buy") {
+        const e = game.players.find((p) => p.id === playerId);
+        if (e) game.buyItem(e, String((d as { itemId?: unknown } | undefined)?.itemId ?? ""));
+      } else if (msg.t === "buyWeapon") {
+        game.handleBuyWeapon(playerId, String(msg.d?.weaponId ?? ""));
+      } else if (msg.t === "switch") {
+        const slot = Number(msg.d?.slot);
+        if (slot === 1 || slot === 2 || slot === 3) game.handleSwitch(playerId, slot);
+      } else if (msg.t === "reload") {
+        game.handleReload(playerId);
+      } else if (msg.t === "selectClass") {
+        game.handleSelectClass(playerId, String((d as { classId?: unknown } | undefined)?.classId ?? ""));
+      } else if (msg.t === "chat") {
+        const text = (d as { text?: unknown } | undefined)?.text;
+        const t = Date.now();
+        if (typeof text === "string" && t - lastChat >= CHAT_MIN_GAP_MS) {
+          lastChat = t;
+          game.handleChat(playerId, text);
+        }
+      }
+    });
   };
 
   ws.on("close", () => {
-    if (playerId >= 0) game.removePlayer(playerId);
+    if (room && playerId >= 0) {
+      const r = room;
+      r.exec((g) => g.removePlayer(playerId));
+    }
   });
+  ws.on("error", () => ws.terminate());
 });
+
+// Conexão que sumiu sem fechar (Wi-Fi caiu, celular dormiu) libera a vaga em vez de virar fantasma
+setInterval(() => {
+  for (const ws of wss.clients as Set<Conn>) {
+    if (ws.isAlive === false) {
+      ws.terminate();
+      continue;
+    }
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, HEARTBEAT_MS);
 
 // ===== Loop do jogo =====
 
 const TICK = 1000 / BALANCE.tickRate;
 let last = Date.now();
-let started = false;
 
-function loop() {
+setInterval(() => {
   const nowMs = Date.now();
   const dt = Math.min(0.1, (nowMs - last) / 1000);
   last = nowMs;
-  if (!started) {
-    started = true;
-    game.startRound();
-  }
-  game.tick(dt);
-  game.ensureBots();
-  const snap = game.snapshot();
-  for (const ctx of game.clients.values()) {
-    ctx.send({ t: "snapshot", d: snap });
-  }
-  const { fx, kills } = game.drainEvents();
-  for (const k of kills) {
-    for (const ctx of game.clients.values()) ctx.send({ t: "kill", d: k });
-  }
-  for (const f of fx) {
-    for (const ctx of game.clients.values()) ctx.send({ t: "event", d: f });
-  }
-}
-
-setInterval(loop, TICK);
+  lobby.tick(dt);
+}, TICK);
 
 server.listen(PORT, () => {
-  console.log(`a-plaga listening on :${PORT} (${BALANCE.tickRate} tps)`);
+  console.log(`a-plaga listening on :${PORT} (${BALANCE.tickRate} tps) — sala principal: ${MAIN_ROOM}`);
 });

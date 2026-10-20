@@ -70,3 +70,69 @@ describe("reconciliação da predição", () => {
     expect(Math.abs(Math.abs(mid) - Math.PI)).toBeLessThan(1e-9);
   });
 });
+
+describe("movimento estilo Source", () => {
+  const run = (m: MoverState, input: Parameters<typeof stepMovement>[1], steps: number, dt = 1 / 60) => {
+    for (let i = 0; i < steps; i++) stepMovement(m, input, dt);
+  };
+  const hspeed = (m: MoverState) => Math.hypot(m.vel.x, m.vel.z);
+
+  it("atrito para o jogador em pouco tempo ao soltar as teclas", () => {
+    const m = mover();
+    run(m, { moveX: 0, moveY: 1, jump: false, crouch: false }, 30);
+    expect(hspeed(m)).toBeGreaterThan(6);
+    run(m, { moveX: 0, moveY: 0, jump: false, crouch: false }, 40);
+    expect(hspeed(m)).toBeLessThan(0.01);
+  });
+
+  it("pula só na borda de subida (segurar espaço não vira auto-bhop)", () => {
+    const m = mover();
+    const hold = { moveX: 0, moveY: 0, jump: true, crouch: false };
+    run(m, hold, 1);
+    expect(m.vel.y).toBeGreaterThan(0);
+    let landed = false;
+    for (let i = 0; i < 180; i++) {
+      stepMovement(m, hold, 1 / 60);
+      if (m.onGround) landed = true;
+    }
+    expect(landed).toBe(true);
+    expect(m.pos.y).toBe(0); // pousou e continuou no chão com o espaço segurado
+  });
+
+  it("teto anti-bhop: pular com velocidade alta reduz para 1.2x", () => {
+    const m = mover();
+    m.vel.z = -20;
+    run(m, { moveX: 0, moveY: 0, jump: true, crouch: false }, 1);
+    expect(hspeed(m)).toBeLessThanOrEqual(BALANCE.baseSpeed * 1.2 + 0.01);
+  });
+
+  it("air-strafe: virar e andar de lado no ar ganha velocidade", () => {
+    const m = mover();
+    m.vel.z = -BALANCE.baseSpeed;
+    run(m, { moveX: 0, moveY: 0, jump: true, crouch: false }, 1);
+    const before = hspeed(m);
+    // gira o yaw ~gradualmente enquanto aperta D (strafe)
+    for (let i = 0; i < 30; i++) {
+      m.yaw -= 0.03;
+      stepMovement(m, { moveX: 1, moveY: 0, jump: false, crouch: false }, 1 / 60);
+    }
+    expect(hspeed(m)).toBeGreaterThan(before);
+    expect(hspeed(m)).toBeLessThanOrEqual(BALANCE.baseSpeed * 2.2 + 0.01);
+  });
+
+  it("coyote time: ainda pula logo depois de sair da borda, mas não depois", () => {
+    const early = mover();
+    early.onGround = false;
+    early.airTime = 0.03;
+    early.pos.y = 0.5;
+    run(early, { moveX: 0, moveY: 0, jump: true, crouch: false }, 1);
+    expect(early.vel.y).toBeGreaterThan(3);
+
+    const late = mover();
+    late.onGround = false;
+    late.airTime = 0.3;
+    late.pos.y = 0.5;
+    run(late, { moveX: 0, moveY: 0, jump: true, crouch: false }, 1);
+    expect(late.vel.y).toBeLessThan(0);
+  });
+});

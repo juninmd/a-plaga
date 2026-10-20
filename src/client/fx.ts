@@ -28,6 +28,8 @@ export function handleFx(renderer: Renderer, fx: FxEvent) {
       const from = fx.from ? v3(fx.from) : state.me ? new THREE.Vector3(state.me.pos.x, state.me.pos.y + 1.5, state.me.pos.z) : null;
       const w = WEAPONS[fx.weapon ?? state.weapon];
       if (from) renderer.tracer(from, pos, fx.color);
+      if (fx.src != null && !mine) renderer.playerShot(fx.src);
+      if (w && w.slot !== 3 && w.sound !== "shotgun") renderer.casing(from ?? pos, pos.clone().sub(from ?? pos).normalize(), mine);
       if (mine) {
         // O clique já deu o feedback (predição); o tracer que chega logo depois só confirma
         const predicted = performance.now() - state.predictedShotAt < 120;
@@ -101,11 +103,26 @@ export function handleFx(renderer: Renderer, fx: FxEvent) {
     }
     case "death": {
       const p = findPlayer(fx.dst);
+      // O corpo é empurrado para longe de quem matou (explosão: do centro dela)
+      const killer = findPlayer(fx.src);
+      if (p && fx.dst != null) {
+        const from = killer && killer.id !== p.id ? killer.pos : fx.from;
+        if (from) {
+          const dx = p.pos.x - from.x;
+          const dz = p.pos.z - from.z;
+          const h = Math.hypot(dx, dz) || 1;
+          const big = fx.weapon === "explosion" || (fx.value ?? 0) > 150;
+          renderer.corpseImpulse(fx.dst, dx / h, dz / h, big ? 7 : 3);
+        }
+      }
       if (onMe) audio.death();
       else if (p) audio.death();
       if (mine) hitmarker(true);
       break;
     }
+    case "bounce":
+      audio.impact(fxVolume(fx.pos, 20) * (0.25 + (fx.value ?? 0.5) * 0.5));
+      break;
     case "pickup":
       if (fxVolume(fx.pos, 6) > 0.2) audio.buy();
       break;

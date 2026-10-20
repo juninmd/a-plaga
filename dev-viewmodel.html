@@ -1,0 +1,22 @@
+<!doctype html><html><body style="margin:0;background:#222">
+<script type="module">
+import * as THREE from "three";
+import { preloadCharacterModels } from "/src/client/render/models/characters.ts";
+import { preloadWeaponModels } from "/src/client/render/models/gltf.ts";
+import { Viewmodel } from "/src/client/render/viewmodel.ts";
+await Promise.all([preloadCharacterModels(), preloadWeaponModels()]);
+const q = new URLSearchParams(location.search);
+const r = new THREE.WebGLRenderer({ antialias: true }); r.setSize(innerWidth, innerHeight); document.body.appendChild(r.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x8a7a60);
+scene.add(new THREE.HemisphereLight(0xfff2d0, 0x6a5a40, 1.5));
+const sun = new THREE.DirectionalLight(0xffffff, 1.8); sun.position.set(3, 6, 4); scene.add(sun);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshLambertMaterial({ color: 0xb89868 })); floor.rotation.x = -Math.PI / 2; floor.position.y = -1.6; scene.add(floor);
+const cam = new THREE.PerspectiveCamera(Number(q.get("fov") ?? 75), innerWidth / innerHeight, 0.05, 100); scene.add(cam);
+const vmCam = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.02, 10); const vmScene = new THREE.Scene(); vmScene.add(vmCam);
+vmScene.add(new THREE.HemisphereLight(0xfff0d0, 0x7a6340, 1.6)); const vs = new THREE.DirectionalLight(0xffe2bb, 2.2); vs.position.set(0.6, 1, 0.5); vmScene.add(vs);
+r.autoClear = false;
+const vm = new Viewmodel(cam, scene, vmCam);
+vm.set(q.get("w") ?? "m4a1", q.get("team") ?? "human", q.get("c") ?? "assault");
+window.__vm = vm; window.__cam = cam; const clock = new THREE.Clock(); let n = 0;
+r.setAnimationLoop(() => { const dt = clock.getDelta(); if (q.get("fire") && n % 20 === 5) vm.fire(); const rl = q.get('reload') ? (n % 160) > 10 : false; vm.update(dt, { moving: !!q.get('move'), reloading: rl, alive: true, speed: Number(q.get('speed') ?? 0), zoomed: false, lookDYaw: 0, lookDPitch: 0, strafe: 0, forward: q.get('move') ? 1 : 0, airborne: false }); if (q.get('test')) { const V = cam.position.constructor; const a = vm.arms; vm.holder.visible = false; const f = q.get('f')?.split(',').map(Number) ?? [0,0,-1]; const pm = q.get('p')?.split(',').map(Number) ?? [0,-1,0]; const cu = Number(q.get('curl') ?? 0); for (const [side,k] of [['R',1],['L',-1]]) a.reach(side, new V(k*0.12,-0.12,-0.45), new V(...f), new V(...pm), new V(k*0.6,-1,0.2), cu); } r.clear(); r.render(scene, cam); r.clearDepth(); r.render(vmScene, vmCam); window.__ready = ++n > Number(q.get('frames') ?? 25); });
+</script></body></html>

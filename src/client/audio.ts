@@ -155,6 +155,12 @@ class AudioFx {
     this.noise(0.05, 0.4 * vol, 2500, "bandpass", 0, 0.5);
   }
 
+  /** Cartucho de latão quicando no chão. */
+  casing(vol = 1) {
+    const f = 3200 + Math.random() * 1400;
+    this.tone(f, 0.09, "triangle", 0.12 * vol, f * 0.7);
+  }
+
   death() {
     this.tone(150, 0.5, "sawtooth", 0.5, 40);
     this.noise(0.4, 0.5, 400);

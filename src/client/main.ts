@@ -3,6 +3,7 @@ import { audio } from "./audio";
 import { handleFx } from "./fx";
 import {
   addChat,
+  esc,
   addKillfeed,
   markSpawned,
   renderScore,
@@ -20,18 +21,31 @@ import { buildInput, isCrouching, isMoving, look, sendInput, setupInput, touch }
 import { Interpolator } from "./interp";
 import { Predictor } from "./predict";
 import { net } from "./net";
+import { updateCompass, updateRadar } from "./radar";
+import { setPredictedPos } from "./predictedPos";
+import { roomFromUrl, roomLink, setupLobby, showLobbyError } from "./lobby";
 import { createRenderer, IS_MOBILE, type Renderer } from "./render/renderer";
 import { preloadWeaponModels } from "./render/models/gltf";
+import { preloadCharacterModels } from "./render/models/characters";
 import { renderShop, shopDigit, toggleShop } from "./shop";
 import { decayRecoil, registerShot, state } from "./state";
 import { setupTouch } from "./touch";
-import type { PlayerState, ServerMsg, ServerSnapshot, WeaponSlot } from "../shared/protocol";
+import type { JoinPayload, PlayerState, RoomInfo, ServerMsg, ServerSnapshot, WeaponSlot } from "../shared/protocol";
 import { WEAPONS } from "../shared/weapons";
 
 const $ = (id: string) => document.getElementById(id)!;
 const renderer: Renderer = createRenderer();
 const predictor = new Predictor();
 const interp = new Interpolator();
+let lastCasingSound = 0;
+renderer.onCasingBounce((pos, impact) => {
+  const nowMs = performance.now();
+  if (nowMs - lastCasingSound < 45) return; // cartuchos em rajada não viram metralhadora de beeps
+  lastCasingSound = nowMs;
+  const me = state.me;
+  const d = me ? Math.hypot(pos.x - me.pos.x, pos.z - me.pos.z) : 99;
+  audio.casing(Math.max(0, 1 - d / 12) * impact);
+});
 
 // ===== Ações compartilhadas entre teclado e touch =====
 
@@ -70,22 +84,36 @@ function closeMenus() {
 // ===== Entrada no jogo =====
 
 let joining = false;
-async function joinGame() {
-  if (joining) return;
+let inGame = false;
+
+function setMenuBusy(busy: boolean) {
+  for (const id of ["join-btn", "create-room-btn", "join-code-btn"]) ($(id) as HTMLButtonElement).disabled = busy;
+  $("join-btn").textContent = busy ? "ENTRANDO…" : urlRoom ? `ENTRAR NA SALA ${urlRoom}` : "JOGAR AGORA";
+}
+
+/** Pede entrada ao servidor; o menu só fecha quando o welcome chega (sala cheia/inexistente volta com erro). */
+async function requestJoin(opts: Omit<JoinPayload, "name">) {
+  if (joining || inGame) return;
   joining = true;
-  const btn = $("join-btn") as HTMLButtonElement;
-  btn.disabled = true;
-  btn.textContent = "CARREGANDO ARMAS…";
+  showLobbyError("");
+  setMenuBusy(true);
+  $("join-btn").textContent = "CARREGANDO ARMAS…";
   await modelsReady; // nunca rejeita: arma sem GLB cai no modelo procedural
   const name = ($("name-input") as HTMLInputElement).value.trim() || "Jogador";
   localStorage.setItem("a-plaga-name", name);
   audio.init();
   audio.resume();
+  $("join-btn").textContent = "ENTRANDO…";
+  net.join({ name, ...opts });
+}
+
+function enterGame(room: RoomInfo) {
+  inGame = true;
   audio.wind();
   $("menu").classList.add("hidden");
   $("hud").classList.remove("hidden");
+  $("ping-box").classList.remove("hidden");
   if (IS_MOBILE) $("touch-ui").classList.remove("hidden");
-  net.send({ t: "join", d: { name } });
   setupInput(renderer.renderer.domElement, IS_MOBILE, {
     toggleShop: () => toggleShop(),
     toggleScore,
@@ -98,7 +126,37 @@ async function joinGame() {
     onFire,
   });
   if (IS_MOBILE) setupTouch({ toggleShop: () => toggleShop(), toggleScore: () => toggleScore(), onSwitch, onReload });
+  showRoom(room);
 }
+
+function showRoom(room: RoomInfo) {
+  net.onWelcome(room.code);
+  const tag = $("room-tag");
+  tag.textContent = room.code;
+  tag.title = "Clique para copiar o link da sala";
+  $("score-room").innerHTML = `${esc(room.name)} · código <b>${esc(room.code)}</b> · ${esc(roomLink(room.code))}`;
+  history.replaceState(null, "", `?sala=${room.code}`);
+}
+
+$("room-tag").addEventListener("click", async () => {
+  const link = roomLink(net.roomCode);
+  try {
+    await navigator.clipboard.writeText(link);
+    addChat("Sistema", `Link da sala copiado: ${link}`, true, 0x00e676);
+  } catch {
+    addChat("Sistema", `Link da sala: ${link}`, true, 0x00e676);
+  }
+});
+
+/** Ping/latência no HUD. */
+setInterval(() => {
+  if (!inGame) return;
+  const ms = net.ping;
+  $("ping-text").textContent = ms < 0 ? "—" : `${Math.round(ms)} ms`;
+  const box = $("ping-box");
+  box.classList.toggle("mid", ms >= 90 && ms < 160);
+  box.classList.toggle("bad", ms >= 160);
+}, 1000);
 
 // ===== Rede =====
 
@@ -110,6 +168,9 @@ net.connect(
   (msg: ServerMsg) => {
     switch (msg.t) {
       case "welcome": {
+        joining = false;
+        if (inGame) showRoom(msg.d.room);
+        else enterGame(msg.d.room);
         state.id = msg.d.id;
         state.snapshot = msg.d.snapshot;
         renderer.localId = msg.d.id;
@@ -184,7 +245,13 @@ net.connect(
         else if (msg.d.winner === "zombie") audio.lose();
         break;
       case "error":
-        addChat("Sistema", msg.d, true, 0xff5252);
+        if (!inGame) {
+          // Recusada na entrada (sala cheia/inexistente): volta ao menu com o motivo
+          joining = false;
+          net.clearJoin();
+          setMenuBusy(false);
+          showLobbyError(msg.d);
+        } else addChat("Sistema", msg.d, true, 0xff5252);
         break;
     }
   },
@@ -214,7 +281,7 @@ function applySnapshot(snap: ServerSnapshot) {
       state.reserve = p.reserve;
       state.abilityReady = p.abilityReady;
       if (p.slots) state.slots = p.slots;
-      renderer.setViewmodel(p.weapon, p.team);
+      renderer.setViewmodel(p.weapon, p.team, p.classId);
       if (p.reloading && !lastReloading) {
         renderer.viewmodelReload();
         audio.reload();
@@ -232,6 +299,7 @@ function applySnapshot(snap: ServerSnapshot) {
       if (prevTeam !== p.team && state.ui.shopOpen) renderShop();
       // Zoom só faz sentido com arma que tem mira telescópica
       const w = WEAPONS[p.weapon];
+      renderer.setFlashlight(state.ui.flashlight && p.alive && p.team === "human");
       renderer.setZoom(state.ui.zooming && w?.zoom && p.alive ? w.zoom : null);
       if (!w?.zoom) state.ui.zooming = false;
     }
@@ -266,6 +334,8 @@ function ambientSounds(snap: ServerSnapshot) {
 // ===== Loop de render (vsync via setAnimationLoop) =====
 
 let lastFrame = performance.now();
+let prevYaw = 0;
+let prevPitch = 0;
 const camPos = new THREE.Vector3();
 let fpsFrames = 0;
 let fpsLast = performance.now();
@@ -291,6 +361,10 @@ function toggleFps() {
   document.body.appendChild(fpsEl);
 }
 document.addEventListener("keydown", (e) => {
+  if ((e.key === "f" || e.key === "F") && !state.ui.chatOpen && !e.repeat && inGame) {
+    state.ui.flashlight = !state.ui.flashlight;
+    audio.switchWeapon();
+  }
   if (e.key === "F3") {
     e.preventDefault();
     toggleFps();
@@ -335,29 +409,45 @@ function frame() {
     const eye = (crouching ? 1.0 : 1.6) * me.scale;
     camPos.set(px, py + eye, pz);
     renderer.setLocalCamera(camPos, look.yaw, look.pitch);
+    setPredictedPos({ x: px, y: py, z: pz });
     if (window.__camSamples.length < 400) window.__camSamples.push(px, pz);
     if (me.alive && speed > 1 && !airborne) audio.footstep(speed, me.team === "zombie", 0.8);
   }
   updateCrosshair(moving || speed > 1, airborne, crouching);
+  if (me) {
+    updateRadar(look.yaw);
+    updateCompass(look.yaw);
+  }
+  const inp = buildInput();
   renderer.frame({
     moving: moving && speed > 0.5,
     reloading: me?.reloading === true,
     alive: me?.alive !== false,
     crouching,
     speed,
+    lookDYaw: look.yaw - prevYaw,
+    lookDPitch: look.pitch - prevPitch,
+    strafe: inp.moveX,
+    forward: inp.moveY,
+    airborne,
   });
+  prevYaw = look.yaw;
+  prevPitch = look.pitch;
   if (me && !me.alive) updateHUD(); // contador de respawn
 }
 
 // ===== Boot =====
 
 // Baixa os GLB das armas enquanto o jogador digita o nome
-const modelsReady = preloadWeaponModels();
+const modelsReady = Promise.all([preloadWeaponModels(), preloadCharacterModels()]);
 
-$("join-btn").addEventListener("click", joinGame);
+const urlRoom = roomFromUrl();
+setMenuBusy(false);
+$("join-btn").addEventListener("click", () => requestJoin(urlRoom ? { room: urlRoom } : {}));
 $("name-input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") joinGame();
+  if (e.key === "Enter") void requestJoin(urlRoom ? { room: urlRoom } : {});
 });
+setupLobby({ join: (p) => void requestJoin(p) });
 if (IS_MOBILE) {
   $("tip-desktop").classList.add("hidden");
   $("tip-touch").classList.remove("hidden");
