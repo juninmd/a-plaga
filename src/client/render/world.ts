@@ -4,9 +4,12 @@ import { MAP } from "../../shared/map";
 import { IS_MOBILE, sandTexture, tex } from "./textures";
 import { pbrMaterial } from "./pbr";
 import { buildProps } from "./props";
-import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
+import { buildNight, type Night } from "./night";
 
 // ===== Mundo estático: chão, paredes, arcos, túneis, props, céu, luzes =====
+
+/** Direção da lua no céu (texel mais claro do equirect moonlit_golf: az 19,4°, el 41,2°). */
+const MOON_DIR = new THREE.Vector3(0.7094, 0.659, 0.2501).normalize();
 
 export interface World {
   sky: THREE.Mesh;
@@ -53,13 +56,13 @@ function addMerged(scene: THREE.Scene, geos: THREE.BufferGeometry[], mat: THREE.
 export function buildWorld(scene: THREE.Scene, renderer?: THREE.WebGLRenderer): World {
   const shadows = !IS_MOBILE;
 
-  // --- Iluminação: sol de fim de tarde empoeirado ---
-  scene.background = new THREE.Color(0x8c7a5c);
-  scene.fog = new THREE.Fog(0xcdbf9f, IS_MOBILE ? 55 : 80, IS_MOBILE ? 140 : 210);
-  scene.add(new THREE.HemisphereLight(0xe6d6b4, 0x7a6340, 1.3));
-  scene.add(new THREE.AmbientLight(0x8a7a60, 0.45));
-  const sun = new THREE.DirectionalLight(0xffe0b0, 1.35);
-  sun.position.set(50, 70, 20);
+  // --- Iluminação noturna: luar azulado + céu estrelado (Poly Haven moonlit_golf, CC0, convertido p/ LDR) ---
+  scene.background = new THREE.Color(0x070b16);
+  scene.fog = new THREE.FogExp2(0x0a1222, IS_MOBILE ? 0.014 : 0.010);
+  scene.add(new THREE.HemisphereLight(0x4a62a0, 0x241e18, 1.15));
+  scene.add(new THREE.AmbientLight(0x2a3450, 0.75));
+  const sun = new THREE.DirectionalLight(0xa8c0ff, 1.7); // a "lua"
+  sun.position.copy(MOON_DIR).multiplyScalar(90);
   sun.castShadow = shadows;
   if (shadows) {
     sun.shadow.mapSize.set(1024, 1024);
@@ -72,24 +75,21 @@ export function buildWorld(scene: THREE.Scene, renderer?: THREE.WebGLRenderer): 
   }
   scene.add(sun);
 
-  // --- Céu HDRI (Poly Haven, CC0): reflexo/ambiente reais + sol alinhado com o disco do céu ---
   if (renderer) {
-    new RGBELoader().load("/env/sky.hdr", (hdr) => {
-      hdr.mapping = THREE.EquirectangularReflectionMapping;
+    new THREE.TextureLoader().load("/env/sky_night.jpg", (sky) => {
+      sky.mapping = THREE.EquirectangularReflectionMapping;
+      sky.colorSpace = THREE.SRGBColorSpace;
       const pmrem = new THREE.PMREMGenerator(renderer);
-      scene.environment = pmrem.fromEquirectangular(hdr).texture;
-      scene.environmentIntensity = 1.25;
-      scene.background = hdr;
+      scene.environment = pmrem.fromEquirectangular(sky).texture;
+      scene.environmentIntensity = 0.85;
+      scene.background = sky;
       scene.backgroundIntensity = 1.0;
-      scene.backgroundBlurriness = 0.0;
       pmrem.dispose();
-      const dir = brightestDirection(hdr);
-      if (dir) sun.position.copy(dir.multiplyScalar(90));
       skyDome.visible = false;
     });
   }
 
-  let skyDome: THREE.Object3D = new THREE.Object3D(); // preenchido adiante; o HDRI esconde o domo de degradê
+  let skyDome: THREE.Object3D = new THREE.Object3D(); // domo de degradê antigo: escondido quando o céu noturno carrega
 
   // --- Chão ---
   const floorMat = pbrMaterial("sand", { color: 0xf0dcb0, roughness: 1, repeat: 1, normalScale: 0.8 });
@@ -155,6 +155,7 @@ export function buildWorld(scene: THREE.Scene, renderer?: THREE.WebGLRenderer): 
 
   // --- Props 3D (barris, pneus, sacos, galões) carregados em segundo plano ---
   void buildProps(scene);
+  const night: Night = buildNight(scene);
 
   // --- Decoração determinística perto dos spawns: sacos de areia e tábuas ---
   const sandbag = new THREE.MeshStandardMaterial({ map: tex("sand", sandTexture), color: 0x9a8a66, roughness: 1 });
@@ -235,7 +236,7 @@ export function buildWorld(scene: THREE.Scene, renderer?: THREE.WebGLRenderer): 
   dustGeo.setAttribute("position", new THREE.BufferAttribute(arr, 3));
   const dust = new THREE.Points(
     dustGeo,
-    new THREE.PointsMaterial({ color: 0xe8d4a8, size: 0.08, transparent: true, opacity: 0.5, depthWrite: false }),
+    new THREE.PointsMaterial({ color: 0x9fb0d0, size: 0.05, transparent: true, opacity: 0.22, depthWrite: false }),
   );
   scene.add(dust);
 
@@ -245,31 +246,11 @@ export function buildWorld(scene: THREE.Scene, renderer?: THREE.WebGLRenderer): 
     dust,
     update(dt, camPos) {
       t += dt;
+      night.update(dt, camPos);
       sky.position.copy(camPos);
       // A nuvem de poeira acompanha a câmera e deriva devagar
       dust.position.set(camPos.x + Math.sin(t * 0.1) * 2, 0, camPos.z + Math.cos(t * 0.13) * 2);
       dust.rotation.y = t * 0.01;
     },
   };
-}
-
-/** Direção (mundo) do texel mais brilhante do HDRI = o sol. */
-function brightestDirection(tex: THREE.DataTexture): THREE.Vector3 | null {
-  const img = tex.image as { data: ArrayLike<number>; width: number; height: number };
-  const { data, width, height } = img;
-  if (!data || !width) return null;
-  const half = data instanceof Uint16Array;
-  const val = (i: number) => (half ? THREE.DataUtils.fromHalfFloat(data[i] as number) : (data[i] as number));
-  let best = -1, bx = 0, by = 0;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 4;
-      const l = val(i) + val(i + 1) + val(i + 2);
-      if (l > best) { best = l; bx = x; by = y; }
-    }
-  }
-  const az = ((bx + 0.5) / width - 0.5) * Math.PI * 2;
-  const el = (0.5 - (by + 0.5) / height) * Math.PI; // linha 0 = topo
-  const e = Math.abs(el); // o sol está sempre acima do horizonte
-  return new THREE.Vector3(Math.cos(az) * Math.cos(e), Math.sin(e), Math.sin(az) * Math.cos(e)).normalize();
 }

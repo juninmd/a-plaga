@@ -32,6 +32,7 @@ export interface LocalState {
     scoreOpen: boolean;
     pointerLocked: boolean;
     zooming: boolean;
+    flashlight: boolean;
     connected: boolean;
   };
 }
@@ -61,6 +62,7 @@ export const state: LocalState = {
     scoreOpen: false,
     pointerLocked: false,
     zooming: false,
+    flashlight: true,
     connected: false,
   },
 };

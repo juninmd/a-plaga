@@ -299,6 +299,7 @@ function applySnapshot(snap: ServerSnapshot) {
       if (prevTeam !== p.team && state.ui.shopOpen) renderShop();
       // Zoom só faz sentido com arma que tem mira telescópica
       const w = WEAPONS[p.weapon];
+      renderer.setFlashlight(state.ui.flashlight && p.alive && p.team === "human");
       renderer.setZoom(state.ui.zooming && w?.zoom && p.alive ? w.zoom : null);
       if (!w?.zoom) state.ui.zooming = false;
     }
@@ -360,6 +361,10 @@ function toggleFps() {
   document.body.appendChild(fpsEl);
 }
 document.addEventListener("keydown", (e) => {
+  if ((e.key === "f" || e.key === "F") && !state.ui.chatOpen && !e.repeat && inGame) {
+    state.ui.flashlight = !state.ui.flashlight;
+    audio.switchWeapon();
+  }
   if (e.key === "F3") {
     e.preventDefault();
     toggleFps();

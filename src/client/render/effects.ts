@@ -54,7 +54,9 @@ class DecalPool {
 export class Effects {
   private tracers: { mesh: THREE.Mesh; until: number }[] = [];
   private particles: Particle[] = [];
-  private lights: { light: THREE.PointLight; until: number }[] = [];
+  /** Pool FIXO de luzes de clarão (tiro/explosão): criar/remover luz muda o shader e recompila tudo. */
+  private flashPool: { light: THREE.PointLight; until: number }[] = [];
+  private flashNext = 0;
   private holes: DecalPool;
   private splats: DecalPool;
   private smokeMat: THREE.SpriteMaterial;
@@ -78,6 +80,12 @@ export class Effects {
   private shakeT = 0;
 
   constructor(private scene: THREE.Scene) {
+    const POOL = IS_MOBILE ? 1 : 3;
+    for (let i = 0; i < POOL; i++) {
+      const light = new THREE.PointLight(0xffffff, 0, 20, 1.5);
+      scene.add(light);
+      this.flashPool.push({ light, until: 0 });
+    }
     this.holes = new DecalPool(scene, tex("hole", bulletHoleTexture), 0.22, IS_MOBILE ? 24 : 64);
     this.splats = new DecalPool(scene, tex("splat", bloodSplatTexture), 1.1, IS_MOBILE ? 12 : 32);
     this.smokeMat = new THREE.SpriteMaterial({ map: tex("smoke", smokeTexture), color: 0x6a6058, transparent: true, opacity: 0.55, depthWrite: false });
@@ -199,11 +207,14 @@ export class Effects {
   }
 
   lightFlash(pos: THREE.Vector3, color: number, intensity: number, distance: number) {
-    if (IS_MOBILE) return;
-    const light = new THREE.PointLight(color, intensity, distance);
-    light.position.copy(pos);
-    this.scene.add(light);
-    this.lights.push({ light, until: performance.now() + 120 });
+    if (this.flashPool.length === 0) return;
+    const f = this.flashPool[this.flashNext];
+    this.flashNext = (this.flashNext + 1) % this.flashPool.length;
+    f.light.position.copy(pos);
+    f.light.color.setHex(color);
+    f.light.distance = distance;
+    f.light.intensity = intensity;
+    f.until = performance.now() + 120;
   }
 
   punch(pitch: number, yaw: number) {
@@ -257,11 +268,12 @@ export class Effects {
       if (nowMs > t.until) { this.scene.remove(t.mesh); t.mesh.geometry.dispose(); return false; }
       return true;
     });
-    this.lights = this.lights.filter((l) => {
-      if (nowMs > l.until) { this.scene.remove(l.light); return false; }
-      l.light.intensity *= 0.8;
-      return true;
-    });
+    for (const l of this.flashPool) {
+      if (l.light.intensity > 0) {
+        if (nowMs > l.until) l.light.intensity = 0;
+        else l.light.intensity *= 0.82;
+      }
+    }
     this.particles = this.particles.filter((p) => {
       if (nowMs > p.until) { this.scene.remove(p.mesh); this.releaseParticle(p.mesh); return false; }
       p.mesh.position.addScaledVector(p.vel, dt);

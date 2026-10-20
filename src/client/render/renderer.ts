@@ -44,6 +44,9 @@ export class Renderer {
   private vmCamera: THREE.PerspectiveCamera;
   /** Pós-processamento (AO + bloom) só no desktop; `?fx=0` desliga. */
   private composer: EffectComposer | null = null;
+  /** Lanterna presa à câmera (luz fixa no shader: só muda a intensidade). */
+  private flashlight: THREE.SpotLight;
+  private flashlightOn = false;
   private fx: Effects;
   private pickups = new Map<number, THREE.Mesh>();
   private projectiles = new Map<number, THREE.Group>();
@@ -68,13 +71,17 @@ export class Renderer {
     this.renderer.shadowMap.enabled = !IS_MOBILE;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
+    this.renderer.toneMappingExposure = 1.4;
     document.getElementById("app")!.appendChild(this.renderer.domElement);
 
     this.camera = new THREE.PerspectiveCamera(DEFAULT_FOV, window.innerWidth / window.innerHeight, 0.05, 400);
     this.camera.rotation.order = "YXZ";
     // A câmera entra na cena para que o viewmodel (filho dela) seja renderizado
     this.scene.add(this.camera);
+    this.flashlight = new THREE.SpotLight(0xe6edff, 0, 42, 0.46, 0.6, 1.35);
+    this.flashlight.position.set(0.14, -0.12, 0);
+    this.flashlight.target.position.set(0.02, -0.05, -6);
+    this.camera.add(this.flashlight, this.flashlight.target);
     this.vmCamera = new THREE.PerspectiveCamera(VM_FOV, window.innerWidth / window.innerHeight, 0.02, 10);
     this.vmScene.add(this.vmCamera);
     // Luz própria do viewmodel (luzes não cruzam cenas): sol quente + céu + bounce do chão
@@ -116,7 +123,7 @@ export class Renderer {
       ao.updateGtaoMaterial({ radius: 0.7, distanceExponent: 1.5, thickness: 1.2, scale: 1.0, samples: 12, distanceFallOff: 1.0, screenSpaceRadius: false });
       ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 8 });
       composer.addPass(ao);
-      composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.18, 0.35, 3.0));
+      composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.55, 0.55, 1.0));
       composer.addPass(new OutputPass());
       this.composer = composer;
     } catch (err) {
@@ -180,6 +187,9 @@ export class Renderer {
   }
   shake(intensity: number) {
     this.fx.shake(intensity);
+  }
+  setFlashlight(on: boolean) {
+    this.flashlightOn = on;
   }
   setZoom(fov: number | null) {
     this.targetFov = fov ?? DEFAULT_FOV;
@@ -300,6 +310,8 @@ export class Renderer {
   frame(state: FrameState) {
     const dt = Math.min(0.1, this.clock.getDelta());
     this.fx.update(dt);
+    const li = this.flashlight.intensity;
+    this.flashlight.intensity = li + ((this.flashlightOn ? 55 : 0) - li) * Math.min(1, dt * 18);
     this.playersReg.update(dt);
     this.vm.update(dt, {
       moving: state.moving,

@@ -11,7 +11,7 @@ Abra o link, digite seu nome e entre. O servidor roda 20 ticks/s com
 autoridade total; bots (com pathfinding A* no mapa) preenchem até 8 jogadores.
 
 - **WASD** mover · **Mouse** mirar · **Clique** atirar · **Botão direito** zoom (AWP)
-- **Ctrl/C** agachar · **Espaço** pular · **R** recarregar · **E** habilidade
+- **Ctrl/C** agachar · **Espaço** pular · **R** recarregar · **E** habilidade · **F** lanterna
 - **1/2/3** ou roda do mouse trocar arma · **B** menu de compra · **Tab** placar · **Enter** chat
 - Celular: analógico esquerdo move, arrastar na direita mira, botões de tiro/pulo/agachar/recarga/habilidade/troca
 
@@ -38,8 +38,10 @@ conexões de entrada.
 - **HUD v2**: layout em painéis chanfrados (fonte Rajdhani), radar circular rotativo (aliados sempre, inimigos por proximidade),
   bússola, placar de round com contagem de zumbis/humanos, vida/colete em barras segmentadas com "fantasma" de dano,
   anel de habilidade, munição com pips do carregador, aviso de recarga e slots com nome da arma.
-- **Mapa**: texturas PBR (Poly Haven, CC0) com normal map em chão/paredes/madeira/concreto, céu HDRI com sol alinhado à luz,
-  sombras, props 3D (barris, pneus, sacos de cimento, galões) ao pé das paredes. Desktop: AO (GTAO) + bloom leve e MSAA;
+- **Mapa à noite**: texturas PBR (Poly Haven, CC0), céu estrelado com lua (HDRI `moonlit_golf` convertido) e luar com sombras;
+  72 lanternas de parede (laranja, holofotes frios nos spawns humanos, vermelho/verde tóxico nos zumbis), fogueiras em barris,
+  letreiros de néon e brilho/bloom. Um pool fixo de PointLights reais segue as fontes mais próximas (o número de luzes do shader
+  nunca muda). **F** liga/desliga a lanterna do humano. Props 3D (barris, pneus, sacos de cimento, galões) ao pé das paredes. Desktop: AO (GTAO) + bloom leve e MSAA;
   `?fx=0` desliga o pós-processamento (mobile já vem desligado).
 - **Viewmodel**: passe de render próprio (FOV 62, depth limpo — a arma não atravessa parede), inércia por mola amortecida ao
   mover o mouse, inclinação ao andar de lado, pose de corrida, impacto ao pousar, fumaça do cano e recarga em fases
@@ -111,7 +113,7 @@ Imagem `ghcr.io/juninmd/a-plaga:latest` via GitHub Actions; manifests no repo
   Assets Mixamo são gratuitos para uso em jogos, mas não podem ser redistribuídos avulsos — para um lançamento
   comercial troque por um personagem próprio/licenciado (basta manter os nomes dos ossos `mixamorig*`).
   As skins por classe são tintas/materiais aplicados sobre o mesmo modelo (`src/client/render/models/characters.ts`).
-- Texturas PBR, HDRI do céu e props 3D do mapa: [Poly Haven](https://polyhaven.com) (CC0) — `public/textures`, `public/env`, `public/models/props`.
+- Texturas PBR, HDRI do céu e props 3D do mapa: [Poly Haven](https://polyhaven.com) (CC0) — `public/textures`, `public/env/sky_night.jpg` (de `moonlit_golf`), `public/models/props`.
 - Sons e demais assets são procedurais (gerados em código). Pesquisa de HUD/mapa/viewmodel: `docs/PESQUISA-VISUAL.md`.
 - Pesquisa de frameworks/assets: `docs/PESQUISA.md`. Visualizadores (com `npm run dev`): `/dev-viewer.html` (skins) e `/dev-viewmodel.html?w=m4a1&c=assault` (primeira pessoa; `team=zombie&w=claws` para zumbi).
 - Primeira pessoa: braços e luvas do mesmo soldado (malha só dos braços, IK de 2 ossos até as empunhaduras da arma); zumbis têm braços rasgados com garras. Zumbis em 3ª pessoa: cabeça apodrecida com olhos brilhantes, sangue/necrose por shader e acessórios por classe (espinhos do Tank, bolsa de bile do Boomer, chifres do Nemesis…).
