@@ -88,7 +88,7 @@ andando/pulando e melhora agachado; recuo acumula por rajada.
 ## Comandos
 
 ```powershell
-npm run dev          # cliente (Vite, proxy /ws para :8080)
+npm run dev          # cliente (Vite, proxy /ws e /rooms para :8080)
 npm run build        # tsc server + vite build
 npm start            # servidor em :8080 (serve dist/ + /ws)
 npm test             # vitest
