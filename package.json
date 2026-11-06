@@ -14,14 +14,14 @@
     "play": "npm run build && node scripts/lan.mjs"
   },
   "dependencies": {
-    "three": "^0.170.0",
-    "ws": "^8.18.0"
+    "three": "^0.187.0",
+    "ws": "^8.22.1"
   },
   "devDependencies": {
-    "@types/three": "^0.185.4",
-    "@types/ws": "^8.5.12",
-    "typescript": "^5.6.3",
-    "vite": "^6.0.0",
-    "vitest": "^2.1.8"
+    "@types/three": "^0.187.0",
+    "@types/ws": "^8.18.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.1.0"
   }
 }
