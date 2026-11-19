@@ -1,7 +1,8 @@
 import { createServer, type IncomingMessage } from "node:http";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join, normalize } from "node:path";
+import { join } from "node:path";
+import { resolveInside } from "./staticPath.js";
 import { WebSocketServer, WebSocket } from "ws";
 import { Lobby, MAIN_ROOM, type Room } from "./lobby.js";
 import { botBrain } from "./bots.js";
@@ -42,8 +43,8 @@ const server = createServer(async (req, res) => {
       res.end(JSON.stringify(lobby.list()));
       return;
     }
-    const file = normalize(join(DIST, path));
-    if (!file.startsWith(DIST)) {
+    const file = resolveInside(DIST, path);
+    if (!file) {
       res.writeHead(403);
       res.end("forbidden");
       return;
