@@ -1,8 +1,8 @@
 import { createServer, type IncomingMessage } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { resolveInside } from "./staticPath.js";
+import { decodeRequestPath, resolveInside } from "./staticPath.js";
 import { WebSocketServer, WebSocket } from "ws";
 import { Lobby, MAIN_ROOM, type Room } from "./lobby.js";
 import { botBrain } from "./bots.js";
@@ -30,7 +30,12 @@ const MIME: Record<string, string> = {
 
 const server = createServer(async (req, res) => {
   try {
-    let path = decodeURIComponent(new URL(req.url ?? "/", "http://localhost").pathname);
+    let path = decodeRequestPath(req.url ?? "/");
+    if (path === null) {
+      res.writeHead(400);
+      res.end("bad request");
+      return;
+    }
     if (path === "/") path = "/index.html";
     if (path === "/health") {
       res.writeHead(200, { "content-type": "application/json" });
@@ -49,7 +54,9 @@ const server = createServer(async (req, res) => {
       res.end("forbidden");
       return;
     }
-    if (!existsSync(file)) {
+    // A directory (e.g. "/assets/") has no body to send: treat it like a miss instead of failing with EISDIR
+    const isFile = existsSync(file) && (await stat(file)).isFile();
+    if (!isFile) {
       // SPA fallback
       const idx = join(DIST, "index.html");
       if (!existsSync(idx)) {
