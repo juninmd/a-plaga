@@ -42,28 +42,36 @@ export function setupLobby(actions: LobbyActions) {
   const list = $("rooms-list");
   let timer = 0;
 
+  // The list refreshes every 5 s: rewriting identical HTML (or dropping the focused button) kicks keyboard users out.
+  const show = (html: string) => {
+    if (list.innerHTML === html) return;
+    const focused = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>("#rooms-list button[data-code]")?.dataset.code;
+    list.innerHTML = html;
+    if (focused) list.querySelector<HTMLElement>(`button[data-code="${CSS.escape(focused)}"]`)?.focus();
+  };
+
   const render = (rooms: RoomInfo[]) => {
     if (!rooms.length) {
-      list.innerHTML = `<div class="room-empty">Nenhuma sala pública — use JOGAR AGORA.</div>`;
+      show(`<div class="room-empty">Nenhuma sala pública — use JOGAR AGORA.</div>`);
       return;
     }
-    list.innerHTML = rooms
+    show(rooms
       .map((r) => {
         const full = r.players >= r.max;
         return `<div class="room-row">
           <div class="rname">${esc(r.name)}<small>${esc(r.code)} · ${esc(r.mode)} · ${PHASE_LABEL[r.phase] ?? esc(r.phase)}</small></div>
           <div class="rcount${full ? " full" : ""}">${r.players}/${r.max}</div>
-          <button class="ghost" data-code="${esc(r.code)}" ${full ? "disabled" : ""}>ENTRAR</button>
+          <button class="ghost" data-code="${esc(r.code)}" aria-label="Entrar na sala ${esc(r.name)} (${r.players} de ${r.max})" ${full ? "disabled" : ""}>ENTRAR</button>
         </div>`;
       })
-      .join("");
+      .join(""));
   };
 
   const refresh = async () => {
     try {
       render(await fetchRooms());
     } catch {
-      list.innerHTML = `<div class="room-empty">Servidor indisponível.</div>`;
+      show(`<div class="room-empty">Servidor indisponível.</div>`);
     }
   };
 
