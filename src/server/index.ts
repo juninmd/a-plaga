@@ -3,6 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { decodeRequestPath, resolveInside } from "./staticPath.js";
+import { clientIp } from "./clientIp.js";
 import { WebSocketServer, WebSocket } from "ws";
 import { Lobby, MAIN_ROOM, type Room } from "./lobby.js";
 import { botBrain } from "./bots.js";
@@ -96,16 +97,9 @@ const MAX_CONN_PER_IP = Number(process.env.MAX_CONN_PER_IP ?? 8);
 const MAX_CONN_TOTAL = Number(process.env.MAX_CONN_TOTAL ?? 300);
 const connsByIp = new Map<string, number>();
 
-/** IP real do cliente: atrás de proxy/ingress (Traefik, Fly, Render) vem em X-Forwarded-For. */
-function clientIp(req: IncomingMessage): string {
-  const fwd = req.headers["x-forwarded-for"];
-  const first = (Array.isArray(fwd) ? fwd[0] : fwd)?.split(",")[0]?.trim();
-  return first || req.socket.remoteAddress || "?";
-}
-
 wss.on("connection", (ws: Conn, req: IncomingMessage) => {
   // Limite por IP e total: um cliente (ou script) não derruba o servidor abrindo milhares de sockets
-  const ip = clientIp(req);
+  const ip = clientIp(req.headers["x-forwarded-for"], req.socket.remoteAddress);
   const open = connsByIp.get(ip) ?? 0;
   if (open >= MAX_CONN_PER_IP || wss.clients.size > MAX_CONN_TOTAL) {
     ws.close(1013, "too many connections");

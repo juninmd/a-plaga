@@ -10,7 +10,7 @@
 ## Proteções para servidor público
 - `maxPayload` 4 KB, 90 msgs/s por conexão, chat com intervalo mínimo.
 - Limite de conexões por IP (`MAX_CONN_PER_IP`, padrão 8) e total (`MAX_CONN_TOTAL`, padrão 300);
-  atrás de proxy o IP vem de `X-Forwarded-For`.
+  atrás de proxy o IP vem da última entrada de `X-Forwarded-For` (a que o proxy anexou; as anteriores o cliente forja).
 - Heartbeat WebSocket a cada 15 s: conexão fantasma libera a vaga.
 - Limite de 24 salas; sala vazia (exceto `ARENA`) é descartada após 60 s e não consome CPU.
 
