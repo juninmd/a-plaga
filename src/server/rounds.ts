@@ -4,10 +4,7 @@ import { infect } from "./combat.js";
 import type { Game } from "./game.js";
 import { narrate } from "./narrator.js";
 import type { Entity } from "./physics.js";
-
-function shuffle<T>(list: T[]): T[] {
-  return [...list].sort(() => Math.random() - 0.5);
-}
+import { shuffle } from "./shuffle.js";
 
 function chooseMode(g: Game): GameMode {
   // Sem repetir modo consecutivo (zp_prevent_consecutive_modes)

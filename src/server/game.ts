@@ -32,6 +32,7 @@ import {
   type Entity,
 } from "./physics.js";
 import { checkRoundEnd, endRound, startRound } from "./rounds.js";
+import { shuffle } from "./shuffle.js";
 
 export interface ClientCtx {
   send(msg: unknown): void;
@@ -63,9 +64,6 @@ const FALL_DAMAGE_SPEED = -12; // m/s ao tocar o chão (queda de ~7 m)
 const SPAWN_OCCUPIED = 2; // metros: ponto já tem alguém em cima
 const SPAWN_ENEMY_MIN = 25; // metros: distância mínima de um inimigo ao nascer
 
-function shuffle<T>(list: readonly T[]): T[] {
-  return [...list].sort(() => Math.random() - 0.5);
-}
 const BUY_ZONE_RADIUS = 14;
 
 export class Game {
